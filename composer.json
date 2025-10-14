@@ -1,0 +1,13 @@
+{
+  "name": "empresa/app_camises",
+  "description": "Aplicaci\u00f3 control d'estoc per Camises - import/export Excel amb PhpSpreadsheet",
+  "require": {
+    "php": ">=7.4",
+    "phpoffice/phpspreadsheet": "^1.30"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "src/"
+    }
+  }
+}
