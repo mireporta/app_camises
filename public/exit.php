@@ -30,7 +30,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
   <?php if($message): ?><div class="alert alert-info"><?=htmlspecialchars($message)?></div><?php endif; ?>
   <form method="post" class="row g-2">
     <div class="col-md-4"><input id="scan_input" name="sku" class="form-control" placeholder="Escaneja SKU (o escriu)" required></div>
-    <div class="col-md-2"><input name="quantity" type="number" class="form-control" value="1" min="1"></div>
+    <!-- <div class="col-md-2"><input name="quantity" type="number" class="form-control" value="1" min="1"></div> -->
     <div class="col-md-3"><input name="from_location" class="form-control" placeholder="Ubicació d'origen (magatzem)"></div>
     <div class="col-md-3"><input name="machine" class="form-control" placeholder="Màquina destí"></div>
     <div class="col-md-12 mt-2"><button class="btn btn-danger">Registrar Sortida</button></div>
