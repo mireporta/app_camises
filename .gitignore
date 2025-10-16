@@ -1,0 +1,9 @@
+# Carpeta d'uploads (PDFs, fitxers pujats)
+public/uploads/
+
+# Fitxers temporals de Windows
+Thumbs.db
+desktop.ini
+
+# Fitxers de log (per si algun dia en generes)
+*.log
