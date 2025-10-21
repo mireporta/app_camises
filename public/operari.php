@@ -37,24 +37,24 @@ if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
     $magatzem = "MAG_INTERMIG";
 
     // Recuperar info del recanvi
-    $stmt = $pdo->prepare("SELECT sku, stock FROM items WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT sku, name FROM items WHERE id = ?");
     $stmt->execute([$itemId]);
     $item = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($item) {
-        // Sumar 1 unitat al magatzem intermig
-        $pdo->prepare("UPDATE items SET stock = stock + 1 WHERE id = ?")->execute([$itemId]);
-
-        // Registrar moviment d'entrada
-        $pdo->prepare("
-            INSERT INTO moviments (item_id, tipus, quantitat, ubicacio)
-            VALUES (?, 'entrada', 1, ?)
-        ")->execute([$itemId, $magatzem]);
-
-        // Eliminar la relació màquina-item
+        // 1️⃣ Esborrar de la màquina
         $pdo->prepare("DELETE FROM maquina_items WHERE maquina = ? AND item_id = ?")->execute([$maquina, $itemId]);
 
-        $message = "↩ Camisa retornada al magatzem intermig correctament.";
+        // 2️⃣ Afegir al magatzem intermig
+        $pdo->prepare("INSERT INTO intermig_items (item_id, maquina) VALUES (?, ?)")->execute([$itemId, $maquina]);
+
+        // 3️⃣ Registrar moviment
+        $pdo->prepare("
+            INSERT INTO moviments (item_id, tipus, quantitat, ubicacio, maquina, created_at)
+            VALUES (?, 'retorn', 1, ?, ?, NOW())
+        ")->execute([$itemId, $magatzem, $maquina]);
+
+        $message = "↩ Camisa retornada correctament al magatzem intermig.";
     }
 }
 
@@ -162,8 +162,8 @@ ob_start();
         </select>
       </div>
 
-      <button type="submit" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 w-full">
-        Retornar
+      <button type="submit" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 w-full">
+        Retornar al magatzem intermig
       </button>
     </form>
   </div>

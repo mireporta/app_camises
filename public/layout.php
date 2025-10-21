@@ -1,6 +1,16 @@
 <?php
 function renderPage(string $title, string $content)
 {
+  global $pdo; // 👈 així tenim accés a la connexió sense carregar res extra
+
+  // comptar recanvis al magatzem intermig
+  $pendingIntermig = 0;
+  try {
+    if ($pdo instanceof PDO) {
+      $stmt = $pdo->query("SELECT COUNT(*) FROM intermig_items");
+      $pendingIntermig = (int)$stmt->fetchColumn();
+    }
+  } catch (Throwable $e) {}
 ?>
 <!DOCTYPE html>
 <html lang="ca">
@@ -39,7 +49,6 @@ function renderPage(string $title, string $content)
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-
 </head>
 
 <body class="min-h-screen flex bg-gray-50">
@@ -60,7 +69,16 @@ function renderPage(string $title, string $content)
       <a href="dashboard.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'dashboard.php' ? 'active' : '' ?>">📊 Dashboard</a>
       <a href="maquines.php" class="flex items-center py-2 px-3 rounded-lg hover:bg-blue-50 <?= basename($_SERVER['PHP_SELF']) === 'maquines.php' ? 'bg-blue-100 text-blue-700 font-medium' : '' ?>">🛠️ Màquines</a>
       <a href="inventory.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'inventory.php' ? 'active' : '' ?>">📦 Inventari</a>
-      <a href="entry.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'entry.php' ? 'active' : '' ?>">⬆️ Entrades</a>
+
+      <a href="entry.php" class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-blue-50 <?= basename($_SERVER['PHP_SELF']) === 'entry.php' ? 'bg-blue-100 text-blue-700 font-medium' : '' ?>">
+        <span class="flex items-center">⬆️ Entrades</span>
+        <?php if ($pendingIntermig > 0): ?>
+          <span class="ml-2 bg-green-500 text-white text-xs font-semibold rounded-full px-2 py-0.5">
+            <?= $pendingIntermig ?>
+          </span>
+        <?php endif; ?>
+      </a>
+
       <a href="exit.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'exit.php' ? 'active' : '' ?>">⬇️ Sortides</a>
       <a href="decommission.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php' ? 'active' : '' ?>">🗑️ Baixes</a>
     </nav>
@@ -90,7 +108,6 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(res => res.json())
     .then(data => {
       if (data.success) {
-        // Esborra la fila de la taula
         const row = button.closest('tr');
         row.classList.add('opacity-50', 'transition');
         setTimeout(() => row.remove(), 300);
@@ -111,4 +128,3 @@ document.addEventListener('DOMContentLoaded', () => {
 <?php
 }
 ?>
-

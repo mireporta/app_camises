@@ -6,14 +6,14 @@ if (!$pdo) {
 }
 
 // ---------- CONSULTES ----------
-$total_items = $pdo->query("SELECT COUNT(*) FROM items")->fetchColumn();
-$low_stock = $pdo->query("SELECT COUNT(*) FROM items WHERE stock < min_stock")->fetchColumn();
-$low_life = $pdo->query("SELECT COUNT(*) FROM items WHERE life_expectancy < 10")->fetchColumn();
-$machine_items = $pdo->query("SELECT COUNT(*) FROM items WHERE category LIKE '%maquina%' OR category LIKE '%màquina%'")->fetchColumn();
+$total_items = (int)$pdo->query("SELECT COUNT(*) FROM items")->fetchColumn();
+$low_stock = (int)$pdo->query("SELECT COUNT(*) FROM items WHERE stock < min_stock")->fetchColumn();
+$low_life = (int)$pdo->query("SELECT COUNT(*) FROM items WHERE life_expectancy < 10")->fetchColumn();
+$machine_items = (int)$pdo->query("SELECT COUNT(*) FROM maquina_items")->fetchColumn();
 
 $items_low_stock = $pdo->query("SELECT * FROM items WHERE stock < min_stock ORDER BY stock ASC")->fetchAll(PDO::FETCH_ASSOC);
-$top_used = $pdo->query("SELECT * FROM items ORDER BY created_at ASC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
 $items_low_life = $pdo->query("SELECT * FROM items WHERE life_expectancy < 10 ORDER BY life_expectancy ASC")->fetchAll(PDO::FETCH_ASSOC);
+$top_used = $pdo->query("SELECT * FROM items ORDER BY created_at ASC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
 
 $peticionsPendents = $pdo->query("
     SELECT * FROM peticions
