@@ -6,22 +6,50 @@ if (!$pdo) {
 }
 
 // ---------- CONSULTES ----------
+
+// Comptadors generals
 $total_items = (int)$pdo->query("SELECT COUNT(*) FROM items")->fetchColumn();
 $low_stock = (int)$pdo->query("SELECT COUNT(*) FROM items WHERE stock < min_stock")->fetchColumn();
-$low_life = (int)$pdo->query("SELECT COUNT(*) FROM items WHERE life_expectancy < 10")->fetchColumn();
 $machine_items = (int)$pdo->query("SELECT COUNT(*) FROM maquina_items")->fetchColumn();
 
-$items_low_stock = $pdo->query("SELECT * FROM items WHERE stock < min_stock ORDER BY stock ASC")->fetchAll(PDO::FETCH_ASSOC);
-$items_low_life = $pdo->query("SELECT * FROM items WHERE life_expectancy < 10 ORDER BY life_expectancy ASC")->fetchAll(PDO::FETCH_ASSOC);
-$top_used = $pdo->query("SELECT * FROM items ORDER BY created_at ASC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC);
+// Calcular vida útil real i recanvis amb vida <10%
+$stmt = $pdo->query("SELECT id, sku, name, life_expectancy, vida_utilitzada FROM items WHERE active = 1");
+$allItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$peticionsPendents = $pdo->query("
-    SELECT * FROM peticions
-    WHERE estat = 'pendent'
-    ORDER BY created_at ASC
-")->fetchAll(PDO::FETCH_ASSOC);
+$low_life = 0;
+$items_low_life = [];
+foreach ($allItems as $item) {
+    $used = (int)$item['vida_utilitzada'];
+    $total = max(1, (int)$item['life_expectancy']);
+    $vida_percent = max(0, 100 - floor(100 * $used / $total));
+
+    if ($vida_percent < 10) {
+        $low_life++;
+        $items_low_life[] = [
+            'sku' => $item['sku'],
+            'name' => $item['name'],
+            'vida_percent' => $vida_percent
+        ];
+    }
+}
+
+// Recanvis amb estoc baix
+$items_low_stock = $pdo
+    ->query("SELECT * FROM items WHERE stock < min_stock ORDER BY stock ASC")
+    ->fetchAll(PDO::FETCH_ASSOC);
+
+// Top 10 més antics (pots adaptar-ho més endavant a “més utilitzats”)
+$top_used = $pdo
+    ->query("SELECT * FROM items ORDER BY created_at ASC LIMIT 10")
+    ->fetchAll(PDO::FETCH_ASSOC);
+
+// Peticions pendents
+$peticionsPendents = $pdo
+    ->query("SELECT * FROM peticions WHERE estat = 'pendent' ORDER BY created_at ASC")
+    ->fetchAll(PDO::FETCH_ASSOC);
 
 ob_start();
+
 ?>
 
 <h1 class="text-3xl font-bold mb-2">Dashboard</h1>
@@ -85,11 +113,11 @@ ob_start();
       <?php if (empty($items_low_life)): ?>
         <li class="py-2 text-gray-400 text-sm">Tots els recanvis tenen vida útil suficient 👌</li>
       <?php else: ?>
-        <?php foreach ($items_low_life as $item): ?>
-          <li class="py-2 flex justify-between text-sm">
-            <span><?= htmlspecialchars($item['sku']) ?> - <?= htmlspecialchars($item['name']) ?></span>
-            <span class="text-red-500 font-semibold"><?= $item['life_expectancy'] ?>%</span>
-          </li>
+        <?php foreach ($items_low_life as $it): ?>
+          <div class="flex justify-between py-1 text-sm">
+            <span><?= htmlspecialchars($it['sku']) ?></span>
+            <span class="text-red-600 font-semibold"><?= $it['vida_percent'] ?>%</span>
+          </div>
         <?php endforeach; ?>
       <?php endif; ?>
     </ul>

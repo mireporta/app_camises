@@ -4,6 +4,15 @@ require_once("layout_operari.php");
 
 // Missatges de feedback
 $message = "";
+if (isset($_GET['msg'])) {
+    $messages = [
+        'peticio_ok' => "✅ Petició enviada correctament!",
+        'vida_ok' => "🧮 Vida actualitzada correctament!",
+        'retorn_ok' => "↩ Camisa retornada al magatzem intermig."
+    ];
+    $message = $messages[$_GET['msg']] ?? '';
+}
+
 
 /* 📥 1. Fer petició */
 if (isset($_POST['action']) && $_POST['action'] === 'peticio') {
@@ -13,6 +22,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'peticio') {
     $stmt = $pdo->prepare("INSERT INTO peticions (maquina, sku) VALUES (?, ?)");
     $stmt->execute([$maquina, $sku]);
     $message = "✅ Petició enviada correctament!";
+
+    header("Location: operari.php?msg=peticio_ok");
+    exit;
 }
 
 /* 🧮 2. Finalitzar producció */
@@ -20,14 +32,34 @@ if (isset($_POST['action']) && $_POST['action'] === 'finalitzar') {
     $maquina = $_POST['maquina'];
     $unitats = (int)$_POST['unitats'];
 
-    // Actualitzar vida acumulada de tots els recanvis assignats a aquesta màquina
-    $pdo->prepare("
-        UPDATE maquina_items
-        SET vida_acumulada = vida_acumulada + ?
-        WHERE maquina = ?
-    ")->execute([$unitats, $maquina]);
+    // Obtenir els recanvis d’aquesta màquina
+    $stmt = $pdo->prepare("SELECT item_id FROM maquina_items WHERE maquina = ?");
+    $stmt->execute([$maquina]);
+    $items = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    $message = "🧮 Vida actualitzada per $unitats unitats a la màquina $maquina.";
+    if ($items) {
+        // Actualitzar vida a maquina_items
+        $pdo->prepare("
+            UPDATE maquina_items
+            SET vida_acumulada = vida_acumulada + ?
+            WHERE maquina = ?
+        ")->execute([$unitats, $maquina]);
+
+        // Actualitzar també la vida acumulada al recanvi (items)
+        $inClause = implode(',', array_fill(0, count($items), '?'));
+        $params = array_merge([$unitats], $items);
+        $pdo->prepare("
+            UPDATE items 
+            SET vida_utilitzada = vida_utilitzada + ?
+            WHERE id IN ($inClause)
+        ")->execute($params);
+
+        $message = "🧮 Vida actualitzada per $unitats unitats a la màquina $maquina.";
+    } else {
+        $message = "⚠️ No hi ha camises assignades a la màquina $maquina.";
+    }
+     header("Location: operari.php?msg=vida_ok");
+    exit;
 }
 
 /* ↩ 3. Retornar recanvis */
@@ -56,6 +88,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
 
         $message = "↩ Camisa retornada correctament al magatzem intermig.";
     }
+    header("Location: operari.php?msg=retorn_ok");
+    exit;
 }
 
 // Obtenir màquines per al desplegable

@@ -5,17 +5,32 @@ require_once("layout.php");
 // Obtenim totes les màquines
 $maquines = $pdo->query("SELECT * FROM maquines ORDER BY codi ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Per cada màquina, obtenim els recanvis ubicats (usant la taula maquina_items)
+// Per cada màquina, obtenim els recanvis ubicats i la seva vida útil real
 $maquinaItems = [];
 foreach ($maquines as $maq) {
     $stmt = $pdo->prepare("
-        SELECT i.sku, i.name, i.life_expectancy
+        SELECT 
+            i.sku, 
+            i.name, 
+            i.life_expectancy, 
+            i.vida_utilitzada
         FROM items i
         JOIN maquina_items mi ON mi.item_id = i.id
         WHERE mi.maquina = ?
     ");
     $stmt->execute([$maq['codi']]);
-    $maquinaItems[$maq['codi']] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Calcular vida útil real (%)
+    foreach ($items as &$item) {
+        $used = (int)$item['vida_utilitzada'];
+        $total = max(1, (int)$item['life_expectancy']);
+        $vida_percent = max(0, 100 - floor(100 * $used / $total));
+        $item['vida_percent'] = $vida_percent;
+    }
+    unset($item);
+
+    $maquinaItems[$maq['codi']] = $items;
 }
 
 ob_start();
@@ -40,7 +55,7 @@ ob_start();
               <tr>
                 <th class="px-4 py-2">SKU</th>
                 <th class="px-4 py-2">Nom</th>
-                <th class="px-4 py-2">Vida útil</th>
+                <th class="px-4 py-2 text-center">Vida útil</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
@@ -48,12 +63,21 @@ ob_start();
                 <tr>
                   <td class="px-4 py-2 font-semibold"><?= htmlspecialchars($item['sku']) ?></td>
                   <td class="px-4 py-2"><?= htmlspecialchars($item['name']) ?></td>
-                  <td class="px-4 py-2">
-                    <div class="flex items-center gap-2">
+                  <td class="px-4 py-2 text-center">
+                    <div class="flex items-center justify-center gap-2">
                       <div class="w-32 bg-gray-200 rounded-full h-2">
-                        <div class="bg-green-500 h-2 rounded-full" style="width: <?= max(0, min(100, (int)$item['life_expectancy'])) ?>%;"></div>
+                        <div 
+                          class="<?php 
+                            if ($item['vida_percent'] <= 10) echo 'bg-red-500';
+                            elseif ($item['vida_percent'] <= 30) echo 'bg-yellow-500';
+                            else echo 'bg-green-500';
+                          ?> h-2 rounded-full" 
+                          style="width: <?= $item['vida_percent'] ?>%;">
+                        </div>
                       </div>
-                      <span class="text-sm"><?= (int)$item['life_expectancy'] ?>%</span>
+                      <span class="text-sm <?= $item['vida_percent'] <= 10 ? 'text-red-600 font-semibold' : 'text-gray-700' ?>">
+                        <?= $item['vida_percent'] ?>%
+                      </span>
                     </div>
                   </td>
                 </tr>
@@ -71,3 +95,4 @@ ob_start();
 <?php
 $content = ob_get_clean();
 renderPage("Màquines", $content);
+?>
