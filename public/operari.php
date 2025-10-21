@@ -226,6 +226,15 @@ ob_start();
   }
 </script>
 
+<script>
+  if (window.location.search.includes("msg=")) {
+    setTimeout(() => {
+      const cleanURL = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanURL);
+    }, 1000);
+  }
+</script>
+
 <?php
 $content = ob_get_clean();
 renderOperariPage("Pantalla Operari", $content);
