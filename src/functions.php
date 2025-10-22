@@ -1,12 +1,24 @@
 <?php
 // src/functions.php - funcions comunes
-$config = require __DIR__ . '/config.php';
-$pdo = new PDO($config['db']['dsn'], $config['db']['user'], $config['db']['pass'], $config['db']['options']);
-
 function find_all_items($pdo) {
-    $stmt = $pdo->query('SELECT * FROM items ORDER BY name');
-    return $stmt->fetchAll();
+    $stmt = $pdo->query("
+        SELECT 
+            i.id,
+            i.sku,
+            i.name,
+            i.category,
+            i.location,
+            i.stock,
+            i.min_stock,
+            i.life_expectancy,
+            COALESCE(i.vida_utilitzada, 0) AS vida_utilitzada,
+            i.active
+        FROM items i
+        ORDER BY i.sku ASC
+    ");
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
+
 
 function find_item_by_sku($pdo, $sku) {
     $stmt = $pdo->prepare('SELECT * FROM items WHERE sku = ?');

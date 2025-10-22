@@ -13,7 +13,7 @@ require_once("layout.php");
 $stmt = $pdo->query("
   SELECT 
     i.id, i.sku, i.name, i.category, i.stock, i.min_stock,
-    i.life_expectancy, i.vida_utilitzada, i.plan_file, i.active,
+    i.life_expectancy, i.vida_utilitzada, i.plan_file, i.active, i.location,
     mi.maquina
   FROM items i
   LEFT JOIN maquina_items mi ON mi.item_id = i.id
@@ -26,6 +26,39 @@ ob_start();
 ?>
 <h2 class="text-3xl font-bold mb-6">Inventari</h2>
 
+<!-- Missatge importació -->
+<?php
+session_start();
+if (!empty($_SESSION['import_message'])) {
+    echo '<div class="mb-4 p-3 rounded border bg-green-50 text-green-700">';
+    echo $_SESSION['import_message']; // 👈 sense htmlspecialchars
+    echo '</div>';
+    unset($_SESSION['import_message']);
+}
+?>
+
+<!-- Botons Importar / Exportar -->
+<div class="flex items-center justify-between mb-4">
+  <div></div> <!-- placeholder per mantenir estructura -->
+
+  <div class="flex gap-3">
+    <!-- Exportar -->
+    <a href="../src/export_inventory.php" 
+       class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2">
+      📤 <span>Exportar Excel</span>
+    </a>
+
+    <!-- Importar -->
+    <form action="../src/import_inventory.php" method="POST" enctype="multipart/form-data" class="flex items-center gap-2">
+      <label class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer flex items-center gap-2">
+        📥 <span>Importar Excel</span>
+        <input type="file" name="excel_file" accept=".xlsx" class="hidden" onchange="this.form.submit()">
+      </label>
+    </form>
+  </div>
+</div>
+
+
 <div class="bg-white rounded-xl shadow p-4 overflow-x-auto">
   <table class="min-w-full text-sm text-left border-collapse">
     <thead class="bg-gray-100 text-gray-700 uppercase text-xs">
@@ -37,6 +70,7 @@ ob_start();
         <th class="px-4 py-2 text-center">Estoc mínim</th>
         <th class="px-4 py-2">Vida útil</th>
         <th class="px-4 py-2">Ubicació</th>
+        <th class="px-4 py-2 text-center">Posició</th>
         <th class="px-4 py-2 text-center">Plànol</th>
         <th class="px-4 py-2 text-right">Accions</th>
       </tr>
@@ -73,6 +107,9 @@ ob_start();
         <td class="px-4 py-2">
           <?= !empty($item['maquina']) ? ('Màquina ' . htmlspecialchars($item['maquina'])) : 'Magatzem' ?>
         </td>
+        <td class="px-4 py-2 text-center">
+          <?= htmlspecialchars($item['location'] ?? '—') ?>
+        </td>
 
         <!-- Plànol -->
         <td class="px-4 py-2 text-center">
@@ -84,32 +121,29 @@ ob_start();
         </td>
 
         <!-- Accions -->
-      <td class="px-4 py-2 text-right">
-        <div class="flex justify-end items-center gap-3">
-          <button 
-            class="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
-            onclick="openEditModal(
-              <?= (int)$item['id'] ?>,
-              '<?= htmlspecialchars($item['sku'], ENT_QUOTES) ?>',
-              '<?= htmlspecialchars($item['name'], ENT_QUOTES) ?>',
-              <?= (int)$item['stock'] ?>,
-              <?= (int)$item['min_stock'] ?>,
-              <?= (int)$item['life_expectancy'] ?>
-            )"
-          >
-            ✏️ <span>Editar</span>
-          </button>
+        <td class="px-4 py-2 text-right">
+          <div class="flex justify-end items-center gap-3">
+            <button 
+              class="px-2 py-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+              onclick='openEditModal(
+                <?= (int)$item["id"] ?>,
+                <?= json_encode($item["sku"]) ?>,
+                <?= json_encode($item["name"]) ?>,
+                <?= (int)$item["stock"] ?>,
+                <?= (int)$item["min_stock"] ?>,
+                <?= (int)$item["life_expectancy"] ?>,
+                <?= json_encode($item["location"]) ?>
+              )'
+            >✏️ <span>Editar</span></button>
 
-          <button 
-            class="flex items-center gap-1 text-red-600 hover:text-red-800 text-sm font-medium"
-            onclick="deleteItem(<?= (int)$item['id'] ?>)"
-          >
-            🗑️ <span>Baixa</span>
-          </button>
-        </div>
-      </td>
-
-
+            <button 
+              class="flex items-center gap-1 text-red-600 hover:text-red-800 text-sm font-medium"
+              onclick="deleteItem(<?= (int)$item['id'] ?>)"
+            >
+              🗑️ <span>Baixa</span>
+            </button>
+          </div>
+        </td>
       </tr>
       <?php endforeach; ?>
     </tbody>
@@ -135,6 +169,9 @@ ob_start();
       <label class="block mb-2 text-sm font-medium">Vida útil teòrica (unitats)</label>
       <input type="number" name="life_expectancy" id="edit-life" class="w-full mb-3 p-2 border rounded" min="0">
 
+      <label class="block mb-2 text-sm font-medium">Posició (estanteria)</label>
+      <input type="text" name="location" id="edit-location" class="w-full mb-3 p-2 border rounded">
+
       <label class="block mb-2 text-sm font-medium">Plànol (PDF)</label>
       <input type="file" name="plan_file" accept="application/pdf" class="w-full mb-3 p-2 border rounded">
       <button type="button" onclick="deletePlanFile()" class="text-red-600 hover:text-red-800 text-sm mb-3">
@@ -150,12 +187,13 @@ ob_start();
 </div>
 
 <script>
-  function openEditModal(id, sku, name, stock, min_stock, life) {
+  function openEditModal(id, sku, name, stock, min_stock, life, location) {
     document.getElementById('edit-id').value = id;
     document.getElementById('edit-name').value = name;
     document.getElementById('edit-stock').value = stock;
     document.getElementById('edit-min_stock').value = min_stock;
     document.getElementById('edit-life').value = life;
+    document.getElementById('edit-location').value = location || '';
     document.getElementById('editModal').classList.remove('hidden');
   }
 

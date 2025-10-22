@@ -52,7 +52,7 @@ ob_start();
 
 ?>
 
-<h1 class="text-3xl font-bold mb-2">Dashboard</h1>
+<h1 class="text-3xl font-bold mb-2">Indicadors</h1>
 <p class="text-gray-500 mb-8">Vista general de l'estat de l'inventari</p>
 
 <!-- TARGETES KPI -->

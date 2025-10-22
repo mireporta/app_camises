@@ -66,7 +66,7 @@ function renderPage(string $title, string $content)
 
     <!-- Navegació -->
     <nav class="flex-1 p-4 space-y-1 text-sm">
-      <a href="dashboard.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'dashboard.php' ? 'active' : '' ?>">📊 Dashboard</a>
+      <a href="dashboard.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'dashboard.php' ? 'active' : '' ?>">📊 Indicadors</a>
       <a href="maquines.php" class="flex items-center py-2 px-3 rounded-lg hover:bg-blue-50 <?= basename($_SERVER['PHP_SELF']) === 'maquines.php' ? 'bg-blue-100 text-blue-700 font-medium' : '' ?>">🛠️ Màquines</a>
       <a href="inventory.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'inventory.php' ? 'active' : '' ?>">📦 Inventari</a>
 
