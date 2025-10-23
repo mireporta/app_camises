@@ -24,51 +24,72 @@ try {
     }
 
     if ($action === 'serveix') {
-        // 1️⃣ Marcar la petició com servida
-        $stmt = $pdo->prepare("UPDATE peticions SET estat = 'servida', updated_at = NOW() WHERE id = ?");
+        // 🔸 Comença transacció per seguretat
+        $pdo->beginTransaction();
+
+        // 1️⃣ Recuperar la petició
+        $stmt = $pdo->prepare("SELECT sku, maquina FROM peticions WHERE id = ?");
         $stmt->execute([$id]);
+        $peticio = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($stmt->rowCount() > 0) {
-            // 2️⃣ Recuperar SKU i màquina de la petició
-            $infoStmt = $pdo->prepare("SELECT sku, maquina FROM peticions WHERE id = ?");
-            $infoStmt->execute([$id]);
-            $peticio = $infoStmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($peticio) {
-                // 3️⃣ Buscar item_id pel SKU
-                $itemStmt = $pdo->prepare("SELECT id FROM items WHERE sku = ?");
-                $itemStmt->execute([$peticio['sku']]);
-                $item = $itemStmt->fetch(PDO::FETCH_ASSOC);
-
-                if ($item) {
-                    // 4️⃣ Verificar si ja existeix a maquina_items
-                    $check = $pdo->prepare("SELECT COUNT(*) FROM maquina_items WHERE maquina = ? AND item_id = ?");
-                    $check->execute([$peticio['maquina'], $item['id']]);
-                    $exists = $check->fetchColumn();
-
-                    if (!$exists) {
-                        // 5️⃣ Inserir la relació màquina ↔ item
-                        $insert = $pdo->prepare("INSERT INTO maquina_items (maquina, item_id) VALUES (?, ?)");
-                        $insert->execute([$peticio['maquina'], $item['id']]);
-                    }
-                }
-            }
+        if (!$peticio) {
+            throw new RuntimeException('Petició no trobada');
         }
-    } else {
+
+        // 2️⃣ Buscar l’item pel SKU
+        $itemStmt = $pdo->prepare("SELECT id, stock FROM items WHERE sku = ?");
+        $itemStmt->execute([$peticio['sku']]);
+        $item = $itemStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$item) {
+            throw new RuntimeException('Recanvi no trobat');
+        }
+
+        if ((int)$item['stock'] <= 0) {
+            throw new RuntimeException('Stock insuficient al magatzem');
+        }
+
+        // 3️⃣ Restar 1 del magatzem principal
+        $pdo->prepare("UPDATE items SET stock = stock - 1 WHERE id = ?")
+            ->execute([$item['id']]);
+
+        // 4️⃣ Assignar recanvi a la màquina (si no hi és)
+        $check = $pdo->prepare("SELECT COUNT(*) FROM maquina_items WHERE maquina = ? AND item_id = ?");
+        $check->execute([$peticio['maquina'], $item['id']]);
+        $exists = $check->fetchColumn();
+
+        if (!$exists) {
+            $pdo->prepare("
+                INSERT INTO maquina_items (maquina, item_id, vida_acumulada)
+                VALUES (?, ?, 0)
+            ")->execute([$peticio['maquina'], $item['id']]);
+        }
+
+        // 5️⃣ Marcar la petició com servida
+        $pdo->prepare("UPDATE peticions SET estat = 'servida', updated_at = NOW() WHERE id = ?")
+            ->execute([$id]);
+
+        // 6️⃣ Registrar moviment per traçabilitat
+        $pdo->prepare("
+            INSERT INTO moviments (item_id, tipus, quantitat, ubicacio, maquina)
+            VALUES (?, 'sortida', 1, 'MAG01', ?)
+        ")->execute([$item['id'], $peticio['maquina']]);
+
+        // 7️⃣ Confirmar canvis
+        $pdo->commit();
+    } 
+    else {
         // ANUL·LAR PETICIÓ
         $stmt = $pdo->prepare("UPDATE peticions SET estat = 'anulada', updated_at = NOW() WHERE id = ?");
         $stmt->execute([$id]);
     }
 
-    if ($stmt->rowCount() === 0) {
-        http_response_code(404);
-        echo json_encode(['success' => false, 'error' => 'NOT_FOUND']);
-        exit;
-    }
-
     echo json_encode(['success' => true]);
 
 } catch (Throwable $e) {
+    if ($pdo && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

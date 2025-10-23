@@ -13,7 +13,7 @@
 // ];
 
 $host = "localhost";
-$dbname = "inventari_camises";
+$dbname = "inventari_camises_v2";
 $user = "root";
 $pass = "";
 

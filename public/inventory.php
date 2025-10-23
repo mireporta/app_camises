@@ -3,25 +3,71 @@ require_once("../src/config.php");
 require_once("layout.php");
 
 /**
- * INVENTARI — Vida útil real basada en unitats acumulades
+ * INVENTARI — Nova versió basada en `item_units`
  * 
- * - items.life_expectancy → unitats teòriques totals (capacitat màxima)
- * - items.vida_utilitzada → unitats reals produïdes acumulades
- * - vida útil (%) = 100 - floor(100 * vida_utilitzada / life_expectancy)
+ * - Cada ítem (SKU) pot tenir diverses unitats físiques (item_units)
+ * - Es mostra estoc total i desglossat per ubicació
+ * - La vida útil segueix basada en `items.life_expectancy` i `vida_utilitzada`
  */
 
 $stmt = $pdo->query("
   SELECT 
-    i.id, i.sku, i.name, i.category, i.stock, i.min_stock,
-    i.life_expectancy, i.vida_utilitzada, i.plan_file, i.active, i.location,
-    mi.maquina
+    i.id,
+    i.sku,
+    i.name,
+    i.category,
+    i.min_stock,
+    i.life_expectancy,
+    i.vida_utilitzada,
+    i.plan_file,
+    i.active,
+    i.location,
+
+    COALESCE(t.total_cnt, 0) AS total_stock,
+    COALESCE(g.cnt_magatzem, 0) AS qty_magatzem,
+    COALESCE(im.cnt_intermig, 0) AS qty_intermig,
+    COALESCE(m.cnt_maquina, 0) AS qty_maquina
+
   FROM items i
-  LEFT JOIN maquina_items mi ON mi.item_id = i.id
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS total_cnt
+      FROM item_units
+      WHERE estat='actiu'
+      GROUP BY item_id
+  ) t ON t.item_id = i.id
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS cnt_magatzem
+      FROM item_units
+      WHERE estat='actiu' AND ubicacio='magatzem'
+      GROUP BY item_id
+  ) g ON g.item_id = i.id
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS cnt_intermig
+      FROM item_units
+      WHERE estat='actiu' AND ubicacio='intermig'
+      GROUP BY item_id
+  ) im ON im.item_id = i.id
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS cnt_maquina
+      FROM item_units
+      WHERE estat='actiu' AND ubicacio='maquina'
+      GROUP BY item_id
+  ) m ON m.item_id = i.id
   WHERE i.active = 1
   ORDER BY i.sku ASC
 ");
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
+// Recuperem totes les unitats per cada ítem
+$unitsByItem = [];
+$stmtUnits = $pdo->query("
+  SELECT iu.*, i.life_expectancy
+  FROM item_units iu
+  JOIN items i ON i.id = iu.item_id
+  ORDER BY iu.serial ASC
+");
+foreach ($stmtUnits->fetchAll(PDO::FETCH_ASSOC) as $u) {
+  $unitsByItem[$u['item_id']][] = $u;
+}
 ob_start();
 ?>
 <h2 class="text-3xl font-bold mb-6">Inventari</h2>
@@ -31,7 +77,7 @@ ob_start();
 session_start();
 if (!empty($_SESSION['import_message'])) {
     echo '<div class="mb-4 p-3 rounded border bg-green-50 text-green-700">';
-    echo $_SESSION['import_message']; // 👈 sense htmlspecialchars
+    echo $_SESSION['import_message'];
     echo '</div>';
     unset($_SESSION['import_message']);
 }
@@ -39,16 +85,13 @@ if (!empty($_SESSION['import_message'])) {
 
 <!-- Botons Importar / Exportar -->
 <div class="flex items-center justify-between mb-4">
-  <div></div> <!-- placeholder per mantenir estructura -->
-
+  <div></div>
   <div class="flex gap-3">
-    <!-- Exportar -->
     <a href="../src/export_inventory.php" 
        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2">
       📤 <span>Exportar Excel</span>
     </a>
 
-    <!-- Importar -->
     <form action="../src/import_inventory.php" method="POST" enctype="multipart/form-data" class="flex items-center gap-2">
       <label class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer flex items-center gap-2">
         📥 <span>Importar Excel</span>
@@ -58,7 +101,6 @@ if (!empty($_SESSION['import_message'])) {
   </div>
 </div>
 
-
 <div class="bg-white rounded-xl shadow p-4 overflow-x-auto">
   <table class="min-w-full text-sm text-left border-collapse">
     <thead class="bg-gray-100 text-gray-700 uppercase text-xs">
@@ -66,11 +108,12 @@ if (!empty($_SESSION['import_message'])) {
         <th class="px-4 py-2">SKU</th>
         <th class="px-4 py-2">Nom</th>
         <th class="px-4 py-2">Categoria</th>
-        <th class="px-4 py-2 text-center">Estoc</th>
-        <th class="px-4 py-2 text-center">Estoc mínim</th>
+        <th class="px-4 py-2 text-center">Total</th>
+        <th class="px-4 py-2 text-center">Magatzem</th>
+        <th class="px-4 py-2 text-center">Intermig</th>
+        <th class="px-4 py-2 text-center">Màquina</th>
+        <th class="px-4 py-2 text-center">Mínim</th>
         <th class="px-4 py-2">Vida útil</th>
-        <th class="px-4 py-2">Ubicació</th>
-        <th class="px-4 py-2 text-center">Posició</th>
         <th class="px-4 py-2 text-center">Plànol</th>
         <th class="px-4 py-2 text-right">Accions</th>
       </tr>
@@ -80,17 +123,19 @@ if (!empty($_SESSION['import_message'])) {
       <?php
         $used = (int)$item['vida_utilitzada'];
         $total = max(1, (int)$item['life_expectancy']);
-        $vp = max(0, 100 - floor(100 * $used / $total)); // % vida restant
+        $vp = max(0, 100 - floor(100 * $used / $total));
         $barClass = $vp <= 10 ? 'bg-red-500' : ($vp <= 30 ? 'bg-yellow-500' : 'bg-green-500');
       ?>
       <tr class="hover:bg-gray-50">
         <td class="px-4 py-2 font-semibold"><?= htmlspecialchars($item['sku']) ?></td>
         <td class="px-4 py-2"><?= htmlspecialchars($item['name']) ?></td>
         <td class="px-4 py-2"><?= htmlspecialchars($item['category']) ?></td>
-        <td class="px-4 py-2 text-center"><?= (int)$item['stock'] ?></td>
-        <td class="px-4 py-2 text-center"><?= (int)$item['min_stock'] ?></td>
+        <td class="px-4 py-2 text-center font-semibold"><?= $item['total_stock'] ?></td>
+        <td class="px-4 py-2 text-center"><?= $item['qty_magatzem'] ?></td>
+        <td class="px-4 py-2 text-center"><?= $item['qty_intermig'] ?></td>
+        <td class="px-4 py-2 text-center"><?= $item['qty_maquina'] ?></td>
+        <td class="px-4 py-2 text-center"><?= $item['min_stock'] ?></td>
 
-        <!-- Vida útil -->
         <td class="px-4 py-2">
           <div class="flex items-center gap-2">
             <div class="w-32 bg-gray-200 rounded-full h-2">
@@ -103,15 +148,6 @@ if (!empty($_SESSION['import_message'])) {
           </div>
         </td>
 
-        <!-- Ubicació -->
-        <td class="px-4 py-2">
-          <?= !empty($item['maquina']) ? ('Màquina ' . htmlspecialchars($item['maquina'])) : 'Magatzem' ?>
-        </td>
-        <td class="px-4 py-2 text-center">
-          <?= htmlspecialchars($item['location'] ?? '—') ?>
-        </td>
-
-        <!-- Plànol -->
         <td class="px-4 py-2 text-center">
           <?php if (!empty($item['plan_file'])): ?>
             <a href="uploads/<?= htmlspecialchars($item['plan_file']) ?>" target="_blank" class="text-blue-600 hover:underline">📎 Obrir</a>
@@ -120,8 +156,7 @@ if (!empty($_SESSION['import_message'])) {
           <?php endif; ?>
         </td>
 
-        <!-- Accions -->
-        <td class="px-4 py-2 text-right">
+       <td class="px-4 py-2 text-right">
           <div class="flex justify-end items-center gap-3">
             <button 
               class="px-2 py-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -137,6 +172,13 @@ if (!empty($_SESSION['import_message'])) {
             >✏️ <span>Editar</span></button>
 
             <button 
+              class="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+              onclick="toggleUnits(<?= (int)$item['id'] ?>)"
+            >
+              📦 <span>Unitats</span>
+            </button>
+
+            <button 
               class="flex items-center gap-1 text-red-600 hover:text-red-800 text-sm font-medium"
               onclick="deleteItem(<?= (int)$item['id'] ?>)"
             >
@@ -145,6 +187,43 @@ if (!empty($_SESSION['import_message'])) {
           </div>
         </td>
       </tr>
+      <tr id="units-row-<?= $item['id'] ?>" class="hidden bg-gray-50">
+  <td colspan="11" class="p-4">
+    <?php if (!empty($unitsByItem[$item['id']])): ?>
+      <table class="min-w-full text-xs text-left border border-gray-200">
+        <thead class="bg-gray-100 text-gray-600 uppercase">
+          <tr>
+            <th class="px-3 py-1">Codi unitat</th>
+            <th class="px-3 py-1">Ubicació</th>
+            <th class="px-3 py-1">Màquina actual</th>
+            <th class="px-3 py-1 text-center">Canvis màquina</th>
+            <th class="px-3 py-1 text-center">Vida útil</th>
+            <th class="px-3 py-1 text-center">Estat</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($unitsByItem[$item['id']] as $u): 
+            $total = max(1, (int)$u['life_expectancy']);
+            $vidaPercent = max(0, 100 - floor(100 * $u['vida_utilitzada'] / $total));
+            $color = $vidaPercent <= 10 ? 'text-red-600' : ($vidaPercent <= 30 ? 'text-yellow-600' : 'text-green-600');
+          ?>
+          <tr class="border-t border-gray-100">
+            <td class="px-3 py-1 font-mono"><?= htmlspecialchars($u['serial']) ?></td>
+            <td class="px-3 py-1 capitalize"><?= htmlspecialchars($u['ubicacio']) ?></td>
+            <td class="px-3 py-1"><?= htmlspecialchars($u['maquina_actual'] ?? '—') ?></td>
+            <td class="px-3 py-1 text-center"><?= (int)$u['cicles_maquina'] ?></td>
+            <td class="px-3 py-1 text-center <?= $color ?> font-semibold"><?= $vidaPercent ?>%</td>
+            <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['estat']) ?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    <?php else: ?>
+      <p class="text-gray-500 text-sm italic">No hi ha unitats registrades per aquest recanvi.</p>
+    <?php endif; ?>
+  </td>
+</tr>
+
       <?php endforeach; ?>
     </tbody>
   </table>
@@ -159,9 +238,6 @@ if (!empty($_SESSION['import_message'])) {
       
       <label class="block mb-2 text-sm font-medium">Nom</label>
       <input type="text" name="name" id="edit-name" class="w-full mb-3 p-2 border rounded">
-
-      <label class="block mb-2 text-sm font-medium">Estoc</label>
-      <input type="number" name="stock" id="edit-stock" class="w-full mb-3 p-2 border rounded">
 
       <label class="block mb-2 text-sm font-medium">Estoc mínim</label>
       <input type="number" name="min_stock" id="edit-min_stock" class="w-full mb-3 p-2 border rounded">
@@ -187,10 +263,9 @@ if (!empty($_SESSION['import_message'])) {
 </div>
 
 <script>
-  function openEditModal(id, sku, name, stock, min_stock, life, location) {
+  function openEditModal(id, sku, name, min_stock, life, location) {
     document.getElementById('edit-id').value = id;
     document.getElementById('edit-name').value = name;
-    document.getElementById('edit-stock').value = stock;
     document.getElementById('edit-min_stock').value = min_stock;
     document.getElementById('edit-life').value = life;
     document.getElementById('edit-location').value = location || '';
@@ -201,16 +276,28 @@ if (!empty($_SESSION['import_message'])) {
     document.getElementById('editModal').classList.add('hidden');
   }
 
-  function deleteItem(id) {
-    if (confirm("Segur que vols donar de baixa aquest recanvi?")) {
-      fetch('../src/delete_item.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'id=' + id
-      }).then(() => location.reload());
-    }
-  }
+   function deleteItem(id) {
+    if (!confirm("Segur que vols donar de baixa aquest recanvi?")) return;
 
+    fetch('../src/delete_item.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'id=' + encodeURIComponent(id)
+    })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        const msg = (data && data.error) ? data.error : 'Error desconegut';
+        throw new Error(msg);
+      }
+      // Opcional: efecte visual abans de recarregar
+      // document.querySelector(`tr[data-id="${id}"]`)?.remove();
+      location.reload();
+    })
+    .catch(err => {
+      alert('❌ No s’ha pogut donar de baixa: ' + err.message);
+    });
+  }
   function deletePlanFile() {
     const id = document.getElementById('edit-id').value;
     if (!id) {
@@ -232,8 +319,16 @@ if (!empty($_SESSION['import_message'])) {
       }
     });
   }
+
+  function toggleUnits(id) {
+  const row = document.getElementById('units-row-' + id);
+  if (!row) return;
+  row.classList.toggle('hidden');
+}
+
 </script>
 
 <?php
 $content = ob_get_clean();
 renderPage("Inventari", $content);
+?>

@@ -5,21 +5,50 @@ if (!$pdo) {
     die("❌ Error: la connexió \$pdo no s'ha creat correctament.");
 }
 
-// ---------- CONSULTES ----------
+// ---------- CONSULTES (esquema nou amb item_units) ----------
 
-// Comptadors generals
+// 1) Total recanvis (unitats físiques actives, sumant magatzem + intermig + màquines)
+$total_stock = (int)$pdo->query("
+    SELECT COUNT(*) 
+    FROM item_units 
+    WHERE estat = 'actiu'
+")->fetchColumn();
+
+// 2) Nombre d’SKUs (si ho vols mantenir com a metrico opcional)
 $total_items = (int)$pdo->query("SELECT COUNT(*) FROM items")->fetchColumn();
-$low_stock = (int)$pdo->query("SELECT COUNT(*) FROM items WHERE stock < min_stock")->fetchColumn();
-$machine_items = (int)$pdo->query("SELECT COUNT(*) FROM maquina_items")->fetchColumn();
 
-// Calcular vida útil real i recanvis amb vida <10%
-$stmt = $pdo->query("SELECT id, sku, name, life_expectancy, vida_utilitzada FROM items WHERE active = 1");
+// 3) Recanvis amb estoc baix (compta totes les unitats actives de cada SKU)
+$low_stock = (int)$pdo->query("
+    SELECT COUNT(*)
+    FROM items i
+    LEFT JOIN (
+        SELECT item_id, COUNT(*) AS total_cnt
+        FROM item_units
+        WHERE estat = 'actiu'
+        GROUP BY item_id
+    ) u ON u.item_id = i.id
+    WHERE COALESCE(u.total_cnt, 0) < i.min_stock
+")->fetchColumn();
+
+// 4) Unitats ubicades a màquines
+$machine_items = (int)$pdo->query("
+    SELECT COUNT(*) 
+    FROM item_units 
+    WHERE estat = 'actiu' AND ubicacio = 'maquina'
+")->fetchColumn();
+
+// 5) Vida útil real (<10%) a partir d’items (igual que ja feies)
+$stmt = $pdo->query("
+    SELECT id, sku, name, life_expectancy, vida_utilitzada 
+    FROM items 
+    WHERE active = 1
+");
 $allItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $low_life = 0;
 $items_low_life = [];
 foreach ($allItems as $item) {
-    $used = (int)$item['vida_utilitzada'];
+    $used  = (int)$item['vida_utilitzada'];
     $total = max(1, (int)$item['life_expectancy']);
     $vida_percent = max(0, 100 - floor(100 * $used / $total));
 
@@ -33,20 +62,60 @@ foreach ($allItems as $item) {
     }
 }
 
-// Recanvis amb estoc baix
-$items_low_stock = $pdo
-    ->query("SELECT * FROM items WHERE stock < min_stock ORDER BY stock ASC")
-    ->fetchAll(PDO::FETCH_ASSOC);
+// 6) Llista detallada dels que estan per sota del mínim (amb desglossament per ubicació)
+$items_low_stock = $pdo->query("
+  SELECT 
+    i.id, i.sku, i.name, i.category, i.min_stock,
 
-// Top 10 més antics (pots adaptar-ho més endavant a “més utilitzats”)
+    COALESCE(t.total_cnt, 0)          AS total_stock,
+    COALESCE(m.cnt_maquina, 0)        AS qty_maquina,
+    COALESCE(g.cnt_magatzem, 0)       AS qty_magatzem,
+    COALESCE(im.cnt_intermig, 0)      AS qty_intermig
+
+  FROM items i
+
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS total_cnt
+      FROM item_units
+      WHERE estat = 'actiu'
+      GROUP BY item_id
+  ) t ON t.item_id = i.id
+
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS cnt_maquina
+      FROM item_units
+      WHERE estat = 'actiu' AND ubicacio = 'maquina'
+      GROUP BY item_id
+  ) m ON m.item_id = i.id
+
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS cnt_magatzem
+      FROM item_units
+      WHERE estat = 'actiu' AND ubicacio = 'magatzem'
+      GROUP BY item_id
+  ) g ON g.item_id = i.id
+
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS cnt_intermig
+      FROM item_units
+      WHERE estat = 'actiu' AND ubicacio = 'intermig'
+      GROUP BY item_id
+  ) im ON im.item_id = i.id
+
+  WHERE COALESCE(t.total_cnt, 0) < i.min_stock
+  ORDER BY COALESCE(t.total_cnt, 0) ASC
+")->fetchAll(PDO::FETCH_ASSOC);
+
+// 7) Top 10 (es manté tal qual)
 $top_used = $pdo
     ->query("SELECT * FROM items ORDER BY created_at ASC LIMIT 10")
     ->fetchAll(PDO::FETCH_ASSOC);
 
-// Peticions pendents
+// 8) Peticions pendents (igual)
 $peticionsPendents = $pdo
     ->query("SELECT * FROM peticions WHERE estat = 'pendent' ORDER BY created_at ASC")
     ->fetchAll(PDO::FETCH_ASSOC);
+
 
 ob_start();
 
@@ -59,7 +128,7 @@ ob_start();
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
   <div class="card">
     <h3>Total recanvis</h3>
-    <div class="value text-blue-600"><?= $total_items ?></div>
+    <div class="value text-blue-600"><?= $total_stock ?></div>
   </div>
   <div class="card">
     <h3>Recanvis amb estoc baix</h3>
@@ -93,7 +162,9 @@ ob_start();
         <?php foreach ($items_low_stock as $item): ?>
           <li class="py-2 flex justify-between text-sm">
             <span><?= htmlspecialchars($item['sku']) ?> - <?= htmlspecialchars($item['name']) ?></span>
-            <span class="text-red-600 font-semibold"><?= $item['stock'] ?> / min <?= $item['min_stock'] ?></span>
+            <span class="text-red-600 font-semibold"
+            title="Magatzem: <?= $item['stock'] ?> | Màquines: <?= $item['qty_maquina'] ?> | Intermig: <?= $item['qty_intermig'] ?>">  
+            <?= (int)$item['total_stock'] ?> / min <?= (int)$item['min_stock'] ?></span>
           </li>
         <?php endforeach; ?>
       <?php endif; ?>
