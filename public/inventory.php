@@ -111,7 +111,7 @@ if (!empty($_SESSION['import_message'])) {
         <th class="px-4 py-2 text-center">Total</th>
         <th class="px-4 py-2 text-center">Magatzem</th>
         <th class="px-4 py-2 text-center">Intermig</th>
-        <!-- <th class="px-4 py-2 text-center">Màquina</th> -->
+        <th class="px-4 py-2 text-center">Màquina</th>
         <th class="px-4 py-2 text-center">Mínim</th>
         <!-- <th class="px-4 py-2">Vida útil</th> -->
         <th class="px-4 py-2 text-center">Plànol</th>

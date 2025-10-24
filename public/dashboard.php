@@ -276,6 +276,24 @@ ob_start();
       <p class="text-gray-500">No hi ha peticions pendents 👌</p>
     <?php endif; ?>
   </div>
+<!-- Modal seleccionar unitat -->
+<div id="modalAssignar" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6">
+    <h2 class="text-lg font-semibold mb-4">Seleccionar unitat disponible</h2>
+    <p class="text-sm text-gray-600 mb-3">Recanvi <span id="modalSku" class="font-mono font-semibold"></span></p>
+
+    <select id="modalSelectUnitat" class="w-full border border-gray-300 rounded p-2 mb-4">
+      <option value="">Carregant unitats...</option>
+    </select>
+
+    <div class="flex justify-end gap-2">
+      <button id="modalCancel" class="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300">Cancel·lar</button>
+      <button id="modalConfirm" class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+
 </div>
 
 

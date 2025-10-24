@@ -31,28 +31,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 /* ✅ 2️⃣ Acceptar recanvi del magatzem intermig */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'acceptar_intermig') {
-    $itemId = (int)$_POST['item_id'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'acceptar_intermig') {
+    $unitId = (int)($_POST['unit_id'] ?? 0); // ara el nom coincideix amb el formulari
 
-    if ($itemId > 0) {
-        $pdo->prepare("UPDATE items SET stock = stock + 1 WHERE id = ?")->execute([$itemId]);
-        $pdo->prepare("DELETE FROM intermig_items WHERE item_id = ?")->execute([$itemId]);
-
+    if ($unitId > 0) {
+        // mou a magatzem
         $pdo->prepare("
-            INSERT INTO moviments (item_id, tipus, quantitat, ubicacio, maquina, created_at)
-            VALUES (?, 'entrada', 1, 'MAG01', 'INTERMIG', NOW())
-        ")->execute([$itemId]);
+            UPDATE item_units
+            SET ubicacio = 'magatzem', updated_at = NOW()
+            WHERE id = ?
+        ")->execute([$unitId]);
+
+        // registre moviment
+        $pdo->prepare("
+            INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+            SELECT iu.id, iu.item_id, 'entrada', 1, 'magatzem', 'INTERMIG', NOW()
+            FROM item_units iu WHERE iu.id = ?
+        ")->execute([$unitId]);
 
         $message = "✅ Recanvi acceptat al magatzem principal.";
     }
 }
 
+
 /* 📦 3️⃣ Obtenir recanvis del magatzem intermig */
 $intermigItems = $pdo->query("
-    SELECT ii.id AS rel_id, i.id AS item_id, i.sku, i.name, ii.maquina, ii.created_at
-    FROM intermig_items ii
-    JOIN items i ON ii.item_id = i.id
-    ORDER BY ii.created_at ASC
+    SELECT iu.id AS unit_id, i.id AS item_id, i.sku, i.name,
+           iu.maquina_actual AS maquina, iu.updated_at
+    FROM item_units iu
+    JOIN items i ON i.id = iu.item_id
+    WHERE iu.estat = 'actiu' AND iu.ubicacio = 'intermig'
+    ORDER BY iu.updated_at ASC
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 ob_start();
@@ -150,8 +159,12 @@ ob_start();
 
 <?php
 // Comptar recanvis pendents al magatzem intermig
-$pendingIntermig = (int)$pdo->query("SELECT COUNT(*) FROM intermig_items")->fetchColumn();
+$pendingIntermig = (int)$pdo->query("
+    SELECT COUNT(*) FROM item_units
+    WHERE estat = 'actiu' AND ubicacio = 'intermig'
+")->fetchColumn();
 
 $content = ob_get_clean();
-renderPage("Entrades", $content, ['pendingIntermig' => $pendingIntermig]);
+renderPage("Entrades", $content);
+
 

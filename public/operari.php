@@ -67,6 +67,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
     $maquina = $_POST['maquina'];
     $unit_id = $_POST['unit_id'];
 
+    // Obtenir item_id de la unitat
+    $stmt = $pdo->prepare("SELECT item_id FROM item_units WHERE id = ?");
+    $stmt->execute([$unit_id]);
+    $item_id = $stmt->fetchColumn();
+     
     // Moure unitat a "intermig"
     $pdo->prepare("
         UPDATE item_units 
@@ -76,9 +81,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
 
     // Registra moviment (opcional)
     $pdo->prepare("
-        INSERT INTO moviments (unit_id, tipus, ubicacio, maquina, created_at)
-        VALUES (?, 'retorn', 'intermig', ?, NOW())
-    ")->execute([$unit_id, $maquina]);
+        INSERT INTO moviments (item_id, item_unit_id, tipus, ubicacio, maquina, created_at)
+        VALUES (?, ?, 'retorn', 'intermig', ?, NOW())
+    ")->execute([$item_id, $unit_id, $maquina]);
 
     header("Location: operari.php?msg=retorn_ok");
     exit;

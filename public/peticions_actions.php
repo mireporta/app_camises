@@ -57,7 +57,7 @@ try {
         $assign = $pdo->prepare("
             UPDATE item_units
             SET ubicacio = 'maquina',
-                maquina = ?,
+                maquina_actual = ?,
                 updated_at = NOW()
             WHERE id = ?
         ");
@@ -70,7 +70,7 @@ try {
             WHERE id = ?
         ")->execute([$id]);
 
-        // 5️⃣ Registrar moviment
+        // 5️⃣ Registrar moviment per traçabilitat
         $pdo->prepare("
             INSERT INTO moviments (item_id, item_unit_id, tipus, quantitat, ubicacio, maquina, created_at)
             VALUES (?, ?, 'sortida', 1, 'magatzem', ?, NOW())
