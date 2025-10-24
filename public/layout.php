@@ -1,9 +1,9 @@
 <?php
-function renderPage(string $title, string $content)
+function renderPage(string $title, string $content, string $extraScripts = '')
 {
-  global $pdo; // 👈 així tenim accés a la connexió sense carregar res extra
+  global $pdo;
 
-  // comptar recanvis al magatzem intermig
+  // Comptar recanvis al magatzem intermig
   $pendingIntermig = 0;
   try {
     if ($pdo instanceof PDO) {
@@ -26,6 +26,9 @@ function renderPage(string $title, string $content)
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.bunny.net">
   <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
   <style>
     body {
       font-family: 'Inter', sans-serif;
@@ -47,8 +50,6 @@ function renderPage(string $title, string $content)
       @apply text-3xl font-bold mt-1;
     }
   </style>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
 </head>
 
 <body class="min-h-screen flex bg-gray-50">
@@ -93,35 +94,10 @@ function renderPage(string $title, string $content)
     <?= $content ?>
   </main>
 
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  const serveixBtns = document.querySelectorAll('.serveix-btn');
-  const anulaBtns = document.querySelectorAll('.anula-btn');
-
-  function handleAction(button, action) {
-    const id = button.getAttribute('data-id');
-    fetch('peticions_actions.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `id=${id}&action=${action}`
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (data.success) {
-        const row = button.closest('tr');
-        row.classList.add('opacity-50', 'transition');
-        setTimeout(() => row.remove(), 300);
-      } else {
-        alert('❌ Error en actualitzar la petició');
-      }
-    })
-    .catch(() => alert('❌ Error en el servidor'));
-  }
-
-  serveixBtns.forEach(btn => btn.addEventListener('click', () => handleAction(btn, 'serveix')));
-  anulaBtns.forEach(btn => btn.addEventListener('click', () => handleAction(btn, 'anula')));
-});
-</script>
+  <!-- Scripts específics de cada pàgina -->
+  <?php if (!empty($extraScripts)): ?>
+    <?= $extraScripts ?>
+  <?php endif; ?>
 
 </body>
 </html>

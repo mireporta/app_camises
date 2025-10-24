@@ -111,9 +111,9 @@ if (!empty($_SESSION['import_message'])) {
         <th class="px-4 py-2 text-center">Total</th>
         <th class="px-4 py-2 text-center">Magatzem</th>
         <th class="px-4 py-2 text-center">Intermig</th>
-        <th class="px-4 py-2 text-center">Màquina</th>
+        <!-- <th class="px-4 py-2 text-center">Màquina</th> -->
         <th class="px-4 py-2 text-center">Mínim</th>
-        <th class="px-4 py-2">Vida útil</th>
+        <!-- <th class="px-4 py-2">Vida útil</th> -->
         <th class="px-4 py-2 text-center">Plànol</th>
         <th class="px-4 py-2 text-right">Accions</th>
       </tr>
@@ -136,7 +136,7 @@ if (!empty($_SESSION['import_message'])) {
         <td class="px-4 py-2 text-center"><?= $item['qty_maquina'] ?></td>
         <td class="px-4 py-2 text-center"><?= $item['min_stock'] ?></td>
 
-        <td class="px-4 py-2">
+        <!-- <td class="px-4 py-2">
           <div class="flex items-center gap-2">
             <div class="w-32 bg-gray-200 rounded-full h-2">
               <div class="<?= $barClass ?> h-2 rounded-full" style="width: <?= $vp ?>%;"></div>
@@ -146,7 +146,7 @@ if (!empty($_SESSION['import_message'])) {
           <div class="text-xs text-gray-400 mt-1">
             Usades: <?= $used ?> / Teòriques: <?= $total ?>
           </div>
-        </td>
+        </td> -->
 
         <td class="px-4 py-2 text-center">
           <?php if (!empty($item['plan_file'])): ?>
@@ -195,7 +195,7 @@ if (!empty($_SESSION['import_message'])) {
           <tr>
             <th class="px-3 py-1">Codi unitat</th>
             <th class="px-3 py-1">Ubicació</th>
-            <th class="px-3 py-1">Màquina actual</th>
+            <!-- <th class="px-3 py-1">Màquina actual</th> -->
             <th class="px-3 py-1 text-center">Canvis màquina</th>
             <th class="px-3 py-1 text-center">Vida útil</th>
             <th class="px-3 py-1 text-center">Estat</th>
@@ -209,8 +209,15 @@ if (!empty($_SESSION['import_message'])) {
           ?>
           <tr class="border-t border-gray-100">
             <td class="px-3 py-1 font-mono"><?= htmlspecialchars($u['serial']) ?></td>
-            <td class="px-3 py-1 capitalize"><?= htmlspecialchars($u['ubicacio']) ?></td>
-            <td class="px-3 py-1"><?= htmlspecialchars($u['maquina_actual'] ?? '—') ?></td>
+            <td class="px-3 py-1 capitalize">
+              <?php
+                if ($u['ubicacio'] === 'maquina' && !empty($u['maquina_actual'])) {
+                  echo 'Màquina ' . htmlspecialchars($u['maquina_actual']);
+                } else {
+                  echo ucfirst(htmlspecialchars($u['ubicacio']));
+                }
+              ?>
+            </td>
             <td class="px-3 py-1 text-center"><?= (int)$u['cicles_maquina'] ?></td>
             <td class="px-3 py-1 text-center <?= $color ?> font-semibold"><?= $vidaPercent ?>%</td>
             <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['estat']) ?></td>

@@ -2,7 +2,7 @@
 require_once("../src/config.php");
 require_once("layout_operari.php");
 
-// Missatges de feedback
+// 🟢 Missatges de feedback
 $message = "";
 if (isset($_GET['msg'])) {
     $messages = [
@@ -13,99 +13,92 @@ if (isset($_GET['msg'])) {
     $message = $messages[$_GET['msg']] ?? '';
 }
 
-
 /* 📥 1. Fer petició */
 if (isset($_POST['action']) && $_POST['action'] === 'peticio') {
     $maquina = $_POST['maquina'];
-    $sku = $_POST['sku'];
+    $sku = trim($_POST['sku']);
 
-    $stmt = $pdo->prepare("INSERT INTO peticions (maquina, sku) VALUES (?, ?)");
+    // Registra petició
+    $stmt = $pdo->prepare("INSERT INTO peticions (maquina, sku, estat) VALUES (?, ?, 'pendent')");
     $stmt->execute([$maquina, $sku]);
-    $message = "✅ Petició enviada correctament!";
 
     header("Location: operari.php?msg=peticio_ok");
     exit;
 }
 
-/* 🧮 2. Finalitzar producció */
+/* 🧮 2. Finalitzar producció (actualitzar vida útil a les unitats) */
 if (isset($_POST['action']) && $_POST['action'] === 'finalitzar') {
     $maquina = $_POST['maquina'];
     $unitats = (int)$_POST['unitats'];
 
-    // Obtenir els recanvis d’aquesta màquina
-    $stmt = $pdo->prepare("SELECT item_id FROM maquina_items WHERE maquina = ?");
+    // Recuperem totes les unitats assignades a la màquina
+    $stmt = $pdo->prepare("
+        SELECT iu.id, iu.item_id
+        FROM item_units iu
+        WHERE iu.maquina_actual = ? AND iu.ubicacio = 'maquina' AND iu.estat = 'actiu'
+    ");
     $stmt->execute([$maquina]);
-    $items = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $units = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if ($items) {
-        // Actualitzar vida a maquina_items
-        $pdo->prepare("
-            UPDATE maquina_items
-            SET vida_acumulada = vida_acumulada + ?
-            WHERE maquina = ?
-        ")->execute([$unitats, $maquina]);
+    if ($units) {
+        foreach ($units as $u) {
+            // Actualitza vida utilitzada de la unitat
+            $pdo->prepare("
+                UPDATE item_units
+                SET vida_utilitzada = vida_utilitzada + ?, updated_at = NOW()
+                WHERE id = ?
+            ")->execute([$unitats, $u['id']]);
 
-        // Actualitzar també la vida acumulada al recanvi (items)
-        $inClause = implode(',', array_fill(0, count($items), '?'));
-        $params = array_merge([$unitats], $items);
-        $pdo->prepare("
-            UPDATE items 
-            SET vida_utilitzada = vida_utilitzada + ?
-            WHERE id IN ($inClause)
-        ")->execute($params);
-
-        $message = "🧮 Vida actualitzada per $unitats unitats a la màquina $maquina.";
-    } else {
-        $message = "⚠️ No hi ha camises assignades a la màquina $maquina.";
+            // Actualitza també al recanvi principal
+            $pdo->prepare("
+                UPDATE items
+                SET vida_utilitzada = vida_utilitzada + ?
+                WHERE id = ?
+            ")->execute([$unitats, $u['item_id']]);
+        }
     }
-     header("Location: operari.php?msg=vida_ok");
+
+    header("Location: operari.php?msg=vida_ok");
     exit;
 }
 
 /* ↩ 3. Retornar recanvis */
 if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
     $maquina = $_POST['maquina'];
-    $itemId = $_POST['item_id'];
-    $magatzem = "MAG_INTERMIG";
+    $unit_id = $_POST['unit_id'];
 
-    // Recuperar info del recanvi
-    $stmt = $pdo->prepare("SELECT sku, name FROM items WHERE id = ?");
-    $stmt->execute([$itemId]);
-    $item = $stmt->fetch(PDO::FETCH_ASSOC);
+    // Moure unitat a "intermig"
+    $pdo->prepare("
+        UPDATE item_units 
+        SET ubicacio = 'intermig', maquina_actual = NULL, updated_at = NOW()
+        WHERE id = ?
+    ")->execute([$unit_id]);
 
-    if ($item) {
-        // 1️⃣ Esborrar de la màquina
-        $pdo->prepare("DELETE FROM maquina_items WHERE maquina = ? AND item_id = ?")->execute([$maquina, $itemId]);
+    // Registra moviment (opcional)
+    $pdo->prepare("
+        INSERT INTO moviments (unit_id, tipus, ubicacio, maquina, created_at)
+        VALUES (?, 'retorn', 'intermig', ?, NOW())
+    ")->execute([$unit_id, $maquina]);
 
-        // 2️⃣ Afegir al magatzem intermig
-        $pdo->prepare("INSERT INTO intermig_items (item_id, maquina) VALUES (?, ?)")->execute([$itemId, $maquina]);
-
-        // 3️⃣ Registrar moviment
-        $pdo->prepare("
-            INSERT INTO moviments (item_id, tipus, quantitat, ubicacio, maquina, created_at)
-            VALUES (?, 'retorn', 1, ?, ?, NOW())
-        ")->execute([$itemId, $magatzem, $maquina]);
-
-        $message = "↩ Camisa retornada correctament al magatzem intermig.";
-    }
     header("Location: operari.php?msg=retorn_ok");
     exit;
 }
 
-// Obtenir màquines per al desplegable
+// 🔍 Obtenir màquines actives
 $maquines = $pdo->query("SELECT codi FROM maquines WHERE activa = 1 ORDER BY codi")->fetchAll(PDO::FETCH_ASSOC);
 
-// Obtenir recanvis actuals a cada màquina (per al bloc de retorn)
-$recanvisPerMaquina = [];
+// 🔍 Obtenir unitats muntades actualment a cada màquina
+$unitsPerMaquina = [];
 foreach ($maquines as $m) {
     $stmt = $pdo->prepare("
-        SELECT mi.id AS rel_id, i.id AS item_id, i.sku
-        FROM maquina_items mi
-        JOIN items i ON mi.item_id = i.id
-        WHERE mi.maquina = ?
+        SELECT iu.id, iu.serial, i.sku
+        FROM item_units iu
+        JOIN items i ON i.id = iu.item_id
+        WHERE iu.maquina_actual = ? AND iu.ubicacio = 'maquina' AND iu.estat = 'actiu'
+        ORDER BY i.sku ASC
     ");
     $stmt->execute([$m['codi']]);
-    $recanvisPerMaquina[$m['codi']] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $unitsPerMaquina[$m['codi']] = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 ob_start();
@@ -190,8 +183,8 @@ ob_start();
       </div>
 
       <div>
-        <label class="block text-sm font-medium">Camisa</label>
-        <select name="item_id" id="select-item-retorn" required class="w-full border p-2 rounded">
+        <label class="block text-sm font-medium">Camisa (unitat)</label>
+        <select name="unit_id" id="select-item-retorn" required class="w-full border p-2 rounded">
           <option value="">-- Selecciona màquina primer --</option>
         </select>
       </div>
@@ -205,7 +198,7 @@ ob_start();
 </div>
 
 <script>
-  const recanvisData = <?= json_encode($recanvisPerMaquina) ?>;
+  const recanvisData = <?= json_encode($unitsPerMaquina) ?>;
 
   function updateRecanvisList() {
     const maquina = document.getElementById('select-maquina-retorn').value;
@@ -213,25 +206,24 @@ ob_start();
     select.innerHTML = '';
 
     if (!maquina || !recanvisData[maquina] || recanvisData[maquina].length === 0) {
-      select.innerHTML = '<option value="">-- Cap recanvi --</option>';
+      select.innerHTML = '<option value="">-- Cap unitat --</option>';
       return;
     }
 
     recanvisData[maquina].forEach(r => {
       const opt = document.createElement('option');
-      opt.value = r.item_id;
-      opt.textContent = r.sku;
+      opt.value = r.id;
+      opt.textContent = r.sku + ' (' + r.serial + ')';
       select.appendChild(opt);
     });
   }
-</script>
 
-<script>
+  // Eliminar paràmetre msg després de mostrar
   if (window.location.search.includes("msg=")) {
     setTimeout(() => {
       const cleanURL = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, cleanURL);
-    }, 1000);
+    }, 1200);
   }
 </script>
 

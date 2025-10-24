@@ -313,8 +313,10 @@ ob_start();
   });
 </script>
 
+
 <?php
 $content = ob_get_clean();
+$extraScripts = '<script src="js/dashboard.js"></script>';
 require_once("layout.php");
-renderPage("Dashboard", $content);
-
+renderPage("Dashboard", $content, $extraScripts);
+?>
