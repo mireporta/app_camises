@@ -48,13 +48,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'finalitzar') {
                 SET vida_utilitzada = vida_utilitzada + ?, updated_at = NOW()
                 WHERE id = ?
             ")->execute([$unitats, $u['id']]);
-
-            // Actualitza també al recanvi principal
-            $pdo->prepare("
-                UPDATE items
-                SET vida_utilitzada = vida_utilitzada + ?
-                WHERE id = ?
-            ")->execute([$unitats, $u['item_id']]);
         }
     }
 
@@ -64,30 +57,54 @@ if (isset($_POST['action']) && $_POST['action'] === 'finalitzar') {
 
 /* ↩ 3. Retornar recanvis */
 if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
-    $maquina = $_POST['maquina'];
-    $unit_id = $_POST['unit_id'];
+    $maquina = trim($_POST['maquina'] ?? '');
+    $unit_id = (int)($_POST['unit_id'] ?? 0);
 
-    // Obtenir item_id de la unitat
-    $stmt = $pdo->prepare("SELECT item_id FROM item_units WHERE id = ?");
-    $stmt->execute([$unit_id]);
-    $item_id = $stmt->fetchColumn();
-     
-    // Moure unitat a "intermig"
-    $pdo->prepare("
-        UPDATE item_units 
-        SET ubicacio = 'intermig', maquina_actual = NULL, updated_at = NOW()
-        WHERE id = ?
-    ")->execute([$unit_id]);
+    if ($unit_id > 0 && $maquina !== '') {
+        try {
+            $pdo->beginTransaction();
 
-    // Registra moviment (opcional)
-    $pdo->prepare("
-        INSERT INTO moviments (item_id, item_unit_id, tipus, ubicacio, maquina, created_at)
-        VALUES (?, ?, 'retorn', 'intermig', ?, NOW())
-    ")->execute([$item_id, $unit_id, $maquina]);
+            // 1️⃣ Obtenir item_id associat
+            $stmt = $pdo->prepare("SELECT item_id FROM item_units WHERE id = ?");
+            $stmt->execute([$unit_id]);
+            $item_id = $stmt->fetchColumn();
 
-    header("Location: operari.php?msg=retorn_ok");
-    exit;
+            if (!$item_id) {
+                throw new RuntimeException("Unitat no trobada");
+            }
+
+            // 2️⃣ Moure unitat a "intermig"
+            $pdo->prepare("
+                UPDATE item_units
+                SET ubicacio = 'intermig',
+                    maquina_actual = NULL,
+                    updated_at = NOW()
+                WHERE id = ?
+            ")->execute([$unit_id]);
+
+            // 3️⃣ Registrar moviment
+            $pdo->prepare("
+                INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+                VALUES (?, ?, 'retorn', 1, 'intermig', ?, NOW())
+            ")->execute([$unit_id, $item_id, $maquina]);
+
+            $pdo->commit();
+
+            header("Location: operari.php?msg=retorn_ok");
+            exit;
+
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            error_log("Error retorn unitat: " . $e->getMessage());
+            header("Location: operari.php?msg=retorn_error");
+            exit;
+        }
+    } else {
+        header("Location: operari.php?msg=retorn_error");
+        exit;
+    }
 }
+
 
 // 🔍 Obtenir màquines actives
 $maquines = $pdo->query("SELECT codi FROM maquines WHERE activa = 1 ORDER BY codi")->fetchAll(PDO::FETCH_ASSOC);
@@ -171,34 +188,68 @@ ob_start();
     </form>
   </div>
 
-  <!-- ↩ RETORNAR RECANVIS -->
-  <div class="bg-white p-4 rounded shadow">
-    <h3 class="text-lg font-semibold mb-3">↩ Retornar camises</h3>
-    <form method="POST" class="space-y-3">
-      <input type="hidden" name="action" value="retornar">
+  <!-- ↩ RETORNAR UNITATS -->
+<div class="bg-white p-4 rounded shadow">
+  <h3 class="text-lg font-semibold mb-3">↩ Retornar recanvis de màquina</h3>
+  <form method="POST" class="space-y-3">
+    <input type="hidden" name="action" value="retornar">
 
-      <div>
-        <label class="block text-sm font-medium">Màquina</label>
-        <select name="maquina" id="select-maquina-retorn" required class="w-full border p-2 rounded" onchange="updateRecanvisList()">
-          <option value="">-- Selecciona --</option>
-          <?php foreach ($maquines as $m): ?>
-            <option value="<?= htmlspecialchars($m['codi']) ?>"><?= htmlspecialchars($m['codi']) ?></option>
-          <?php endforeach; ?>
-        </select>
-      </div>
+    <!-- Màquina -->
+    <div>
+      <label class="block text-sm font-medium">Màquina</label>
+      <select name="maquina" id="select-maquina-retorn" required class="w-full border p-2 rounded" onchange="updateUnitatsList()">
+        <option value="">-- Selecciona --</option>
+        <?php foreach ($maquines as $m): ?>
+          <option value="<?= htmlspecialchars($m['codi']) ?>"><?= htmlspecialchars($m['codi']) ?></option>
+        <?php endforeach; ?>
+      </select>
+    </div>
 
-      <div>
-        <label class="block text-sm font-medium">Camisa (unitat)</label>
-        <select name="unit_id" id="select-item-retorn" required class="w-full border p-2 rounded">
-          <option value="">-- Selecciona màquina primer --</option>
-        </select>
-      </div>
+    <!-- Unitat / Serial -->
+    <div>
+      <label class="block text-sm font-medium">Unitat (serial)</label>
+      <select name="unit_id" id="select-unit-retorn" required class="w-full border p-2 rounded">
+        <option value="">-- Selecciona màquina primer --</option>
+      </select>
+    </div>
 
-      <button type="submit" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 w-full">
-        Retornar al magatzem intermig
-      </button>
-    </form>
-  </div>
+    <button type="submit" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 w-full">
+      Retornar al magatzem intermig
+    </button>
+  </form>
+</div>
+
+<script>
+  const unitatsPerMaquina = <?= json_encode(
+    $pdo->query("
+      SELECT iu.id AS unit_id, iu.serial, i.sku, iu.maquina_actual
+      FROM item_units iu
+      JOIN items i ON i.id = iu.item_id
+      WHERE iu.estat = 'actiu' AND iu.ubicacio = 'maquina'
+    ")->fetchAll(PDO::FETCH_ASSOC)
+  ) ?>;
+
+  function updateUnitatsList() {
+    const maquina = document.getElementById('select-maquina-retorn').value;
+    const select = document.getElementById('select-unit-retorn');
+    select.innerHTML = '';
+
+    const unitats = unitatsPerMaquina.filter(u => u.maquina_actual === maquina);
+
+    if (unitats.length === 0) {
+      select.innerHTML = '<option value="">-- Cap unitat activa a aquesta màquina --</option>';
+      return;
+    }
+
+    unitats.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.unit_id;
+      opt.textContent = `${u.sku} (${u.serial})`;
+      select.appendChild(opt);
+    });
+  }
+</script>
+
 
 </div>
 

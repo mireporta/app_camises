@@ -1,107 +1,75 @@
 <?php
-declare(strict_types=1);
-header('Content-Type: application/json; charset=utf-8');
+require_once("config.php");
+header('Content-Type: application/json');
+
+$id       = $_POST['id'] ?? null;
+$action   = $_POST['action'] ?? '';
+$unit_id  = $_POST['unit_id'] ?? null;
+
+if (!$id || !$action) {
+    echo json_encode(['success' => false, 'error' => 'Falten dades.']);
+    exit;
+}
 
 try {
-    require_once __DIR__ . '/../src/config.php';
-    if (!isset($pdo) || !$pdo) {
-        throw new RuntimeException('PDO no inicialitzat');
-    }
-
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        http_response_code(405);
-        echo json_encode(['success' => false, 'error' => 'METHOD_NOT_ALLOWED']);
-        exit;
-    }
-
-    $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
-    $action = $_POST['action'] ?? '';
-    $unitId = isset($_POST['unit_id']) ? (int)$_POST['unit_id'] : null;
-
-    if ($id <= 0 || !in_array($action, ['serveix', 'anula'], true)) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'error' => 'BAD_REQUEST']);
-        exit;
-    }
-
     if ($action === 'serveix') {
-        if (!$unitId) {
-            throw new RuntimeException('Falta el camp unit_id');
-        }
-
-        $pdo->beginTransaction();
-
-        // 1️⃣ Recuperar la petició
+        // 🔹 Obtenim info petició
         $stmt = $pdo->prepare("SELECT sku, maquina FROM peticions WHERE id = ?");
         $stmt->execute([$id]);
         $peticio = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$peticio) {
-            throw new RuntimeException('Petició no trobada');
-        }
+        if (!$peticio) throw new Exception('Petició no trobada.');
 
-        // 2️⃣ Obtenir la unitat física
-        $unitStmt = $pdo->prepare("
-            SELECT iu.*, i.sku, i.name 
+        // 🔹 Obtenim info unitat
+        $stmt = $pdo->prepare("
+            SELECT iu.id, iu.item_id, iu.estat, iu.ubicacio, iu.sububicacio
             FROM item_units iu
             JOIN items i ON i.id = iu.item_id
-            WHERE iu.id = ? AND iu.estat = 'actiu'
+            WHERE iu.id = ? AND i.sku = ?
         ");
-        $unitStmt->execute([$unitId]);
-        $unit = $unitStmt->fetch(PDO::FETCH_ASSOC);
+        $stmt->execute([$unit_id, $peticio['sku']]);
+        $unit = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$unit) throw new Exception('Unitat no vàlida per aquest SKU.');
 
-        if (!$unit) {
-            throw new RuntimeException('Unitat no trobada o no disponible');
-        }
-
-        // 3️⃣ Assignar la unitat a la màquina
-        $assign = $pdo->prepare("
+        // 🔹 Actualitzem la unitat → ubicació = màquina
+        $update = $pdo->prepare("
             UPDATE item_units
             SET ubicacio = 'maquina',
                 maquina_actual = ?,
+                sububicacio = NULL,
                 updated_at = NOW()
             WHERE id = ?
         ");
-        $assign->execute([$peticio['maquina'], $unitId]);
+        $update->execute([$peticio['maquina'], $unit_id]);
 
-        // 4️⃣ Actualitzar estat de la petició
-        $pdo->prepare("
-            UPDATE peticions
-            SET estat = 'servida', updated_at = NOW()
-            WHERE id = ?
-        ")->execute([$id]);
+        // 🔹 Actualitzem la petició com “servida”
+        $updPet = $pdo->prepare("UPDATE peticions SET estat='servida', updated_at=NOW() WHERE id=?");
+        $updPet->execute([$id]);
 
-        // 5️⃣ Registrar moviment per traçabilitat
-        $pdo->prepare("
-            INSERT INTO moviments (item_id, item_unit_id, tipus, quantitat, ubicacio, maquina, created_at)
-            VALUES (?, ?, 'sortida', 1, 'magatzem', ?, NOW())
-        ")->execute([$unit['item_id'], $unitId, $peticio['maquina']]);
+        // 🔹 Registre del moviment (si tens la taula `moviments`)
+        if ($pdo->query("SHOW TABLES LIKE 'moviments'")->rowCount() > 0) {
+            $mov = $pdo->prepare("
+                INSERT INTO moviments (item_unit_id, tipus, origen, desti, maquina, created_at)
+                VALUES (?, 'servei', ?, 'maquina', ?, NOW())
+            ");
+            $mov->execute([$unit_id, $unit['ubicacio'], $peticio['maquina']]);
+        }
 
-        $pdo->commit();
-
-        echo json_encode(['success' => true, 'message' => 'Unitat assignada correctament']);
+        echo json_encode(['success' => true]);
         exit;
     }
 
-    // 🔴 ANUL·LAR PETICIÓ
-    if ($action === 'anula') {
-        $stmt = $pdo->prepare("
-            UPDATE peticions
-            SET estat = 'anulada', updated_at = NOW()
-            WHERE id = ?
-        ");
-        $stmt->execute([$id]);
-
-        echo json_encode(['success' => true, 'message' => 'Petició anul·lada']);
+    elseif ($action === 'anula') {
+        // 🔸 Anul·lem la petició
+        $upd = $pdo->prepare("UPDATE peticions SET estat='anulada', updated_at=NOW() WHERE id=?");
+        $upd->execute([$id]);
+        echo json_encode(['success' => true]);
         exit;
     }
 
-} catch (Throwable $e) {
-    if (isset($pdo) && $pdo->inTransaction()) {
-        $pdo->rollBack();
+    else {
+        echo json_encode(['success' => false, 'error' => 'Acció no reconeguda.']);
     }
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage()
-    ]);
+
+} catch (Exception $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
