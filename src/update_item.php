@@ -1,53 +1,45 @@
 <?php
-require_once __DIR__ . "/config.php";
+require_once("../src/config.php");
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-  header("Location: ../public/inventory.php");
-  exit;
-}
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $id = (int)($_POST['id'] ?? 0);
+    $name = trim($_POST['name'] ?? '');
+    $category = trim($_POST['category'] ?? '');
+    $min_stock = (int)($_POST['min_stock'] ?? 0);
+    $plan_file = null;
 
-$id         = (int)($_POST['id'] ?? 0);
-$name       = trim($_POST['name'] ?? '');
-$min_stock  = (int)($_POST['min_stock'] ?? 0);
-
-if ($id <= 0) {
-  header("Location: ../public/inventory.php");
-  exit;
-}
-
-$planFileName = null;
-
-// ✅ Si s'ha pujat un plànol nou (PDF)
-if (!empty($_FILES['plan_file']['name']) && $_FILES['plan_file']['error'] === UPLOAD_ERR_OK) {
-  $tmp  = $_FILES['plan_file']['tmp_name'];
-  $ext  = strtolower(pathinfo($_FILES['plan_file']['name'], PATHINFO_EXTENSION));
-  if ($ext === 'pdf') {
-    $uploads = realpath(__DIR__ . '/../public/uploads');
-    if (!$uploads) {
-      $uploads = __DIR__ . '/../public/uploads';
-      @mkdir($uploads, 0775, true);
+    if ($id <= 0) {
+        die("Error: falta ID");
     }
-    $planFileName = 'plan_' . uniqid() . '.pdf';
-    move_uploaded_file($tmp, $uploads . '/' . $planFileName);
-  }
+
+    // Comprovem si s’ha pujat un nou fitxer
+    if (!empty($_FILES['plan_file']['name'])) {
+        $uploadDir = __DIR__ . '/../public/uploads/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+
+        $fileName = time() . '_' . basename($_FILES['plan_file']['name']);
+        $targetPath = $uploadDir . $fileName;
+
+        if (move_uploaded_file($_FILES['plan_file']['tmp_name'], $targetPath)) {
+            $plan_file = $fileName;
+        }
+    }
+
+    // Actualitzar registre
+    $sql = "UPDATE items SET name=?, category=?, min_stock=?, updated_at=NOW()";
+    $params = [$name, $category, $min_stock];
+
+    if ($plan_file) {
+        $sql .= ", plan_file=?";
+        $params[] = $plan_file;
+    }
+
+    $sql .= " WHERE id=?";
+    $params[] = $id;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+
+    header("Location: ../public/inventory.php?msg=item_updated");
+    exit;
 }
-
-// 🔹 Si hi ha plànol nou, s'actualitza també `plan_file`
-if ($planFileName) {
-  $sql = "UPDATE items 
-          SET name = ?, min_stock = ?, plan_file = ?
-          WHERE id = ?";
-  $params = [$name, $min_stock, $planFileName, $id];
-} else {
-  $sql = "UPDATE items 
-          SET name = ?, min_stock = ?
-          WHERE id = ?";
-  $params = [$name, $min_stock, $id];
-}
-
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-
-header("Location: ../public/inventory.php");
-exit;
-

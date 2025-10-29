@@ -1,27 +1,24 @@
 <?php
-require_once("config.php");
+require_once("../src/config.php");
+header('Content-Type: application/json');
 
-if (!isset($_POST['id'])) {
-    http_response_code(400);
-    exit('Falta ID');
+$id = (int)($_POST['id'] ?? 0);
+if ($id <= 0) {
+    echo json_encode(['success' => false, 'error' => 'Falta ID']);
+    exit;
 }
 
-$id = intval($_POST['id']);
+try {
+    $stmt = $pdo->prepare("SELECT plan_file FROM items WHERE id = ?");
+    $stmt->execute([$id]);
+    $file = $stmt->fetchColumn();
 
-// Obtenim el nom del fitxer actual
-$stmt = $pdo->prepare("SELECT plan_file FROM items WHERE id = ?");
-$stmt->execute([$id]);
-$planFile = $stmt->fetchColumn();
-
-if ($planFile) {
-    $filePath = "../public/uploads/" . $planFile;
-    if (file_exists($filePath)) {
-        unlink($filePath); // 🗑️ Esborra el PDF físic
+    if ($file && file_exists(__DIR__ . '/../public/uploads/' . $file)) {
+        unlink(__DIR__ . '/../public/uploads/' . $file);
     }
 
-    // Neteja el camp a la BD
-    $update = $pdo->prepare("UPDATE items SET plan_file = NULL WHERE id = ?");
-    $update->execute([$id]);
+    $pdo->prepare("UPDATE items SET plan_file = NULL WHERE id = ?")->execute([$id]);
+    echo json_encode(['success' => true]);
+} catch (Throwable $e) {
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
-
-http_response_code(200);

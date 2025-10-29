@@ -121,10 +121,17 @@ ob_start();
         </td>
         <td class="px-4 py-2 text-right">
           <div class="flex justify-end items-center gap-3">
-            <button class="px-2 py-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
-              onclick='openItemModal(<?= (int)$item["id"] ?>, <?= json_encode($item["name"]) ?>, <?= (int)$item["min_stock"] ?>)'>
+           <button class="px-2 py-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+              onclick='openItemModal(
+                <?= (int)$item["id"] ?>,
+                <?= json_encode($item["name"]) ?>,
+                <?= (int)$item["min_stock"] ?>,
+                <?= json_encode($item["category"]) ?>,
+                <?= json_encode($item["plan_file"]) ?>
+              )'>
               ✏️ Editar
             </button>
+
             <button class="text-indigo-600 hover:text-indigo-800 text-sm font-medium" onclick="toggleUnits(<?= (int)$item['id'] ?>)">
               📦 Unitats
             </button>
@@ -144,84 +151,61 @@ ob_start();
               <tr>
                 <th class="px-3 py-1">Codi unitat</th>
                 <th class="px-3 py-1">Ubicació</th>
-                <th class="px-3 py-1">Estanteria</th>
+                <th class="px-3 py-1 text-center">Estanteria</th>
                 <th class="px-3 py-1 text-center">Cicles màquina</th>
                 <th class="px-3 py-1 text-center">Vida útil</th>
                 <th class="px-3 py-1 text-center">Estat</th>
                 <th class="px-3 py-1 text-right">Accions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($unitsByItem[$item['id']] as $u): 
-                $lifeTotal = (int)($u['vida_total'] ?? 0);
-                $vidaUsada = (int)($u['vida_utilitzada'] ?? 0);
-                $vidaPercent = $lifeTotal > 0 ? max(0, 100 - floor(100 * $vidaUsada / $lifeTotal)) : null;
-                $barColor = $vidaPercent === null ? 'bg-gray-300' :
-                  ($vidaPercent <= 10 ? 'bg-red-500' : ($vidaPercent <= 30 ? 'bg-yellow-400' : 'bg-green-500'));
-              ?>
-              <tr class="border-t border-gray-100">
-                <td class="px-3 py-1 font-mono"><?= htmlspecialchars($u['serial']) ?></td>
-                <td class="px-3 py-1 capitalize">
-                  <?= $u['ubicacio'] === 'maquina' && $u['maquina_actual'] 
-                        ? 'Màquina ' . htmlspecialchars($u['maquina_actual']) 
-                        : ucfirst(htmlspecialchars($u['ubicacio'])) ?>
-                </td>
-                <td class="px-3 py-1"><?= htmlspecialchars($u['location'] ?? '—') ?></td>
-                <td class="px-3 py-1 text-center"><?= (int)$u['cicles_maquina'] ?></td>
-                <td class="px-3 py-2 text-center">
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($unitsByItem[$item['id']] as $u): 
+                  $lifeTotal = (int)($u['vida_total'] ?? 0);
+                  $vidaUsada = (int)($u['vida_utilitzada'] ?? 0);
+                  $vidaPercent = $lifeTotal > 0 ? max(0, 100 - floor(100 * $vidaUsada / $lifeTotal)) : null;
+                ?>
+                <tr class="border-t border-gray-100">
+                  <td class="px-3 py-1 font-mono"><?= htmlspecialchars($u['serial']) ?></td>
+                  <td class="px-3 py-1 capitalize">
+                    <?= $u['ubicacio'] === 'maquina' && $u['maquina_actual'] 
+                          ? 'Màquina ' . htmlspecialchars($u['maquina_actual']) 
+                          : ucfirst(htmlspecialchars($u['ubicacio'])) ?>
+                  </td>
+                  <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['sububicacio'] ?? '—') ?></td>
+                  <td class="px-3 py-1 text-center"><?= (int)$u['cicles_maquina'] ?></td>
+                  <td class="px-3 py-2 text-center">
                     <?php if ($vidaPercent !== null): ?>
-                      <?php
-                        // Colors segons el percentatge restant
-                        if ($vidaPercent <= 10) {
-                          $dot = 'bg-red-500';
-                          $bar = 'bg-red-400';
-                        } elseif ($vidaPercent <= 30) {
-                          $dot = 'bg-yellow-400';
-                          $bar = 'bg-yellow-300';
-                        } else {
-                          $dot = 'bg-green-500';
-                          $bar = 'bg-green-400';
-                        }
-                      ?>
                       <div class="flex flex-col items-center space-y-1">
-                        <!-- Etiqueta superior -->
                         <div class="flex items-center gap-1 text-xs font-semibold text-gray-700">
-                          <span class="w-2 h-2 rounded-full <?= $dot ?>"></span>
                           <span><?= $vidaPercent ?>%</span>
                         </div>
-
-                        <!-- Barra -->
                         <div class="w-28 bg-gray-200 rounded-full h-2 overflow-hidden">
-                          <div class="<?= $bar ?> h-2 rounded-full" style="width: <?= $vidaPercent ?>%;"></div>
+                          <div class="h-2 rounded-full <?= $vidaPercent <= 10 ? 'bg-red-500' : ($vidaPercent <= 30 ? 'bg-yellow-400' : 'bg-green-500') ?>" style="width: <?= $vidaPercent ?>%;"></div>
                         </div>
-
-                        <!-- Text inferior -->
                         <div class="text-[11px] text-gray-500 mt-0.5">
                           Usades: <?= $vidaUsada ?> / Teòriques: <?= $lifeTotal ?>
                         </div>
                       </div>
                     <?php else: ?>
-                      <div class="text-[12px] text-gray-600 italic">
-                        Sense dades de vida útil
-                      </div>
+                      <div class="text-[12px] text-gray-600 italic">Sense dades de vida útil</div>
                     <?php endif; ?>
                   </td>
+                  <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['estat']) ?></td>
+                  <td class="px-3 py-1 text-right">
+                    <button 
+                      class="text-blue-600 hover:text-blue-800"
+                      onclick='openUnitModal(
+                        <?= (int)$u["id"] ?>, 
+                        <?= json_encode($u["serial"]) ?>, 
+                        <?= json_encode($u["sububicacio"] ?? "") ?>,
+                        <?= json_encode($u["vida_total"] ?? "") ?>
+                      )'
+                    >✏️ Editar</button>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
 
-                <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['estat']) ?></td>
-                <td class="px-3 py-1 text-right">
-                  <button 
-                    class="text-blue-600 hover:text-blue-800"
-                    onclick='openUnitModal(
-                      <?= (int)$u["id"] ?>, 
-                      <?= json_encode($u["serial"]) ?>, 
-                      <?= json_encode($u["sububicacio"] ?? "") ?>,
-                      <?= json_encode($u["vida_total"] ?? "") ?>
-                    )'
-                  >✏️ Editar</button>
-
-                </td>
-              </tr>
-              <?php endforeach; ?>
+             
             </tbody>
           </table>
           <?php else: ?>
@@ -238,13 +222,34 @@ ob_start();
 <div id="editItemModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
   <div class="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
     <h3 class="text-lg font-bold mb-4">Editar recanvi</h3>
+
     <form id="editItemForm" method="POST" action="../src/update_item.php" enctype="multipart/form-data">
       <input type="hidden" name="id" id="edit-item-id">
+
+      <!-- Nom -->
       <label class="block mb-2 text-sm font-medium">Nom</label>
       <input type="text" name="name" id="edit-item-name" class="w-full mb-3 p-2 border rounded">
+
+      <!-- Categoria -->
+      <label class="block mb-2 text-sm font-medium">Categoria</label>
+      <input type="text" name="category" id="edit-item-category" class="w-full mb-3 p-2 border rounded" placeholder="Ex: Camises, Punzons...">
+
+      <!-- Estoc mínim -->
       <label class="block mb-2 text-sm font-medium">Estoc mínim</label>
       <input type="number" name="min_stock" id="edit-item-min_stock" class="w-full mb-3 p-2 border rounded">
-      <div class="flex justify-end space-x-2">
+
+      <!-- Plànol -->
+      <label class="block mb-2 text-sm font-medium">Plànol actual</label>
+      <div id="plan-file-container" class="mb-3 text-sm text-gray-700">
+        <span id="plan-file-info" class="italic text-gray-500">Sense plànol adjunt</span>
+        <button type="button" id="delete-plan-btn" class="hidden ml-2 text-red-600 hover:underline">🗑️ Eliminar</button>
+      </div>
+
+      <label class="block mb-2 text-sm font-medium">Pujar nou plànol</label>
+      <input type="file" name="plan_file" id="edit-item-plan_file" accept=".pdf,.png,.jpg,.jpeg,.dwg" class="w-full mb-4 p-2 border rounded bg-gray-50">
+
+      <!-- Botons -->
+      <div class="flex justify-end space-x-2 mt-4">
         <button type="button" onclick="closeItemModal()" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel·lar</button>
         <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar</button>
       </div>
@@ -252,12 +257,13 @@ ob_start();
   </div>
 </div>
 
+
 <!-- 🧩 Modal UNIT -->
 <div id="editUnitModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
   <div class="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
     <h3 class="text-lg font-bold mb-4">Editar unitat</h3>
     <form id="editUnitForm" method="POST" action="../src/update_unit.php">
-      <input type="hidden" name="id" id="edit-unit-id">
+      <input type="hidden" name="unit_id" id="edit-unit-id">
 
       <div class="mb-4">
         <label class="block mb-1 font-medium">Codi unitat (serial)</label>
@@ -266,13 +272,12 @@ ob_start();
 
       <div class="mb-4">
         <label class="block mb-1 font-medium">Estanteria / Sububicació</label>
-        <input type="text" name="sububicacio" id="edit-unit-sububicacio" class="w-full p-2 border rounded" required>
+        <input type="text" name="sububicacio" id="edit-unit-sububicacio" class="w-full p-2 border rounded" placeholder="Ex: E2 o Caixa5">
       </div>
-
 
       <div class="mb-4">
         <label class="block mb-1 font-medium">Vida útil teòrica</label>
-        <input type="number" name="vida_total" id="edit-unit-total" class="w-full p-2 border rounded" min="0" placeholder="p. ex. 100">
+        <input type="number" name="vida_total" id="edit-unit-total" class="w-full p-2 border rounded" min="0" placeholder="Ex: 100">
         <p class="text-xs text-gray-500 mt-1">Aquest valor s'utilitza per calcular el percentatge de vida restant.</p>
       </div>
 
@@ -287,23 +292,51 @@ ob_start();
 
 
 <script>
-function openItemModal(id, name, min_stock) {
+function openItemModal(id, name, min_stock, category, plan_file) {
   document.getElementById('edit-item-id').value = id;
   document.getElementById('edit-item-name').value = name;
   document.getElementById('edit-item-min_stock').value = min_stock;
+  document.getElementById('edit-item-category').value = category || '';
+
+  const info = document.getElementById('plan-file-info');
+  const delBtn = document.getElementById('delete-plan-btn');
+
+  if (plan_file) {
+    info.innerHTML = `<a href="uploads/${plan_file}" target="_blank" class="text-blue-600 hover:underline">${plan_file}</a>`;
+    delBtn.classList.remove('hidden');
+    delBtn.onclick = () => {
+      if (confirm("Vols eliminar aquest plànol?")) {
+        fetch('../src/delete_plan.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'id=' + encodeURIComponent(id)
+        }).then(res => res.json()).then(data => {
+          if (data.success) {
+            info.textContent = "Sense plànol adjunt";
+            delBtn.classList.add('hidden');
+          } else {
+            alert("❌ " + (data.error || "No s'ha pogut eliminar"));
+          }
+        });
+      }
+    };
+  } else {
+    info.textContent = "Sense plànol adjunt";
+    delBtn.classList.add('hidden');
+  }
+
   document.getElementById('editItemModal').classList.remove('hidden');
 }
-function closeItemModal() {
-  document.getElementById('editItemModal').classList.add('hidden');
-}
 
-function openUnitModal(id, serial, sububicacio, vida_total = '') {
+
+function openUnitModal(id, serial, sububicacio = '', vida_total = '') {
   document.getElementById('edit-unit-id').value = id;
   document.getElementById('edit-unit-serial').value = serial;
   document.getElementById('edit-unit-sububicacio').value = sububicacio || '';
   document.getElementById('edit-unit-total').value = vida_total || '';
   document.getElementById('editUnitModal').classList.remove('hidden');
 }
+
 function closeUnitModal() {
   document.getElementById('editUnitModal').classList.add('hidden');
 }

@@ -9,45 +9,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $sku = trim($_POST['sku'] ?? '');
     $serial = trim($_POST['serial'] ?? '');
     $estanteria = trim($_POST['estanteria'] ?? '');
-    $ubicacio = 'MAG01' . ($estanteria ? " - " . $estanteria : ''); // 👈 concatena l’estanteria
+    $ubicacio = 'magatzem';
+    $sububicacio = trim($_POST['estanteria'] ?? '');
     $origen = trim($_POST['origen'] ?? 'principal');
+    $categoria = trim($_POST['categoria'] ?? '');
+    $vida_total = (int)($_POST['vida_total'] ?? 0);
 
     if ($sku && $serial) {
-        // Comprova si ja existeix l’ítem
+        // comprova si ja existeix
         $stmt = $pdo->prepare("SELECT id FROM items WHERE sku = ?");
         $stmt->execute([$sku]);
         $item = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$item) {
-            // Si no existeix, el creem
+            // nou item amb categoria
             $pdo->prepare("
-                INSERT INTO items (sku, name, stock, created_at)
-                VALUES (?, ?, 0, NOW())
-            ")->execute([$sku, $sku]);
+                INSERT INTO items (sku, name, category, stock, created_at)
+                VALUES (?, ?, ?, 0, NOW())
+            ")->execute([$sku, $sku, $categoria]);
             $itemId = (int)$pdo->lastInsertId();
         } else {
             $itemId = (int)$item['id'];
+            if ($categoria) {
+                // actualitza categoria si l'usuari la posa
+                $pdo->prepare("UPDATE items SET category = ? WHERE id = ?")->execute([$categoria, $itemId]);
+            }
         }
 
-        // Evitar duplicats de serial
+        // evitar duplicats de serial
         $check = $pdo->prepare("SELECT COUNT(*) FROM item_units WHERE serial = ?");
         $check->execute([$serial]);
         if ($check->fetchColumn() > 0) {
             $message = "⚠️ Ja existeix una unitat amb el serial $serial.";
         } else {
-            // Crear nova unitat
+            // crear unitat amb vida total
             $pdo->prepare("
-                INSERT INTO item_units (item_id, serial, ubicacio, estat, created_at, updated_at)
-                VALUES (?, ?, ?, 'actiu', NOW(), NOW())
-            ")->execute([$itemId, $serial, $ubicacio]);
+                INSERT INTO item_units (item_id, serial, ubicacio, sububicacio, estat, vida_utilitzada, vida_total, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'actiu', 0, ?, NOW(), NOW())
+            ")->execute([$itemId, $serial, 'magatzem', $estanteria, $vida_total]);
 
-            // Registrar moviment
+            // registrar moviment
             $pdo->prepare("
                 INSERT INTO moviments (item_id, item_unit_id, tipus, quantitat, ubicacio, maquina, created_at)
-                VALUES (?, (SELECT id FROM item_units WHERE serial = ?), 'entrada', 1, ?, ?, NOW())
-            ")->execute([$itemId, $serial, $ubicacio, $origen]);
+                SELECT ?, id, 'entrada', 1, ?, ?, NOW() FROM item_units WHERE serial = ?
+            ")->execute([$itemId, 'magatzem', $origen, $serial]);
 
-            // Actualitzar estoc
             $pdo->prepare("UPDATE items SET stock = stock + 1 WHERE id = ?")->execute([$itemId]);
 
             $message = "✅ Entrada registrada correctament ($serial a $ubicacio).";
@@ -56,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $message = "⚠️ Cal omplir SKU i Serial.";
     }
 }
+
 
 
 /* ✅ 2️⃣ Acceptar recanvi del magatzem intermig */
@@ -85,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'accep
 /* 📦 3️⃣ Obtenir recanvis del magatzem intermig */
 $intermigItems = $pdo->query("
     SELECT iu.id AS unit_id, i.id AS item_id, i.sku, i.name,
-           iu.maquina_actual AS maquina, iu.updated_at
+           iu.serial, iu.maquina_actual AS maquina, iu.updated_at
     FROM item_units iu
     JOIN items i ON i.id = iu.item_id
     WHERE iu.estat = 'actiu' AND iu.ubicacio = 'intermig'
@@ -122,6 +129,16 @@ ob_start();
       </div>
       
       <div>
+        <label class="block mb-1 font-medium">Categoria</label>
+        <input type="text" name="categoria" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: ENROSCAT / PREMSA / MOTOR">
+      </div>
+
+      <div>
+        <label class="block mb-1 font-medium">Vida útil total (hores o cicles)</label>
+        <input type="number" name="vida_total" min="1" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: 200">
+      </div>
+
+      <div>
         <label class="block mb-1 font-medium">Estanteria (opcional)</label>
         <input type="text" name="estanteria" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: E2 o Caixa5">
         <p class="text-xs text-gray-400 mt-1">S'afegirà automàticament a la ubicació MAG01.</p>
@@ -154,7 +171,7 @@ ob_start();
         <thead class="bg-gray-100 uppercase text-xs text-gray-600">
           <tr>
             <th class="px-4 py-2">SKU</th>
-            <th class="px-4 py-2">Nom</th>
+            <th class="px-4 py-2">Serial</th>
             <th class="px-4 py-2">Màquina origen</th>
             <th class="px-4 py-2 text-center">Acció</th>
           </tr>
@@ -163,12 +180,12 @@ ob_start();
           <?php foreach ($intermigItems as $item): ?>
             <tr class="hover:bg-gray-50 transition">
               <td class="px-4 py-2 font-semibold"><?= htmlspecialchars($item['sku']) ?></td>
-              <td class="px-4 py-2"><?= htmlspecialchars($item['name']) ?></td>
+              <td class="px-4 py-2"><?= htmlspecialchars($item['serial']) ?></td>
               <td class="px-4 py-2"><?= htmlspecialchars($item['maquina']) ?></td>
               <td class="px-4 py-2 text-center">
                 <form method="POST" style="display:inline;">
                   <input type="hidden" name="action" value="acceptar_intermig">
-                  <input type="hidden" name="item_id" value="<?= $item['item_id'] ?>">
+                  <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
                   <button title="Entrar al magatzem" 
                           class="inline-flex items-center justify-center bg-green-500 hover:bg-green-600 
                                  text-white rounded-full w-8 h-8 shadow transition">
