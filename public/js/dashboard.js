@@ -1,6 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const serveixBtns = document.querySelectorAll('.serveix-btn');
-  const anulaBtns = document.querySelectorAll('.anula-btn');
 
   // 🔹 Crear el modal Tailwind un cop (reutilitzable)
   const modal = document.createElement('div');
@@ -56,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
       currentBtn = button;
       currentId = id;
 
-      // Mostra el modal amb animació suau
       modalEl.classList.remove('hidden');
       modalEl.classList.add('flex');
       setTimeout(() => {
@@ -85,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   assignCancel.addEventListener('click', closeModal);
-  modalEl.addEventListener('click', e => { if (e.target === modalEl) closeModal(); }); // tancar clicant fora
+  modalEl.addEventListener('click', e => { if (e.target === modalEl) closeModal(); });
 
   // 🔸 Confirmar assignació
   assignConfirm.addEventListener('click', async () => {
@@ -111,7 +108,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const json = await res.json();
 
       if (json.success) {
-        // Animació d’eliminació
         const row = currentBtn.closest('tr');
         row.classList.add('opacity-50', 'transition');
         setTimeout(() => row.remove(), 300);
@@ -125,28 +121,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 🔸 Botons principals
-  serveixBtns.forEach(btn => btn.addEventListener('click', () => {
-    const id = btn.dataset.id;
-    const sku = btn.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
-    openModal(btn, sku, id);
-  }));
+  // 🔸 Delegació d'esdeveniments per a botons dinàmics
+  document.body.addEventListener('click', e => {
+    const serveix = e.target.closest('.serveix-btn');
+    const anula = e.target.closest('.anula-btn');
 
-  anulaBtns.forEach(btn => btn.addEventListener('click', async () => {
-    const id = btn.dataset.id;
-    if (!confirm('Vols anul·lar aquesta petició?')) return;
-
-    const formData = new URLSearchParams({ id, action: 'anula' });
-    const res = await fetch('peticions_actions.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData.toString()
-    });
-    const json = await res.json();
-    if (json.success) {
-      btn.closest('tr').remove();
-    } else {
-      alert(`❌ Error: ${json.error || 'no s\'ha pogut anul·lar la petició'}`);
+    if (serveix) {
+      const id = serveix.dataset.id;
+      const sku = serveix.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+      openModal(serveix, sku, id);
     }
-  }));
+
+    if (anula) {
+      const id = anula.dataset.id;
+      if (!confirm('Vols anul·lar aquesta petició?')) return;
+
+      const formData = new URLSearchParams({ id, action: 'anula' });
+      fetch('peticions_actions.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      })
+        .then(res => res.json())
+        .then(json => {
+          if (json.success) {
+            anula.closest('tr').remove();
+          } else {
+            alert(`❌ Error: ${json.error || 'no s\'ha pogut anul·lar la petició'}`);
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          alert('❌ Error de connexió amb el servidor');
+        });
+    }
+  });
 });

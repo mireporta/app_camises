@@ -93,9 +93,10 @@ ob_start();
         <th class="px-4 py-2">Nom</th>
         <th class="px-4 py-2">Categoria</th>
         <th class="px-4 py-2 text-center">Total</th>
-        <th class="px-4 py-2 text-center">Magatzem</th>
-        <th class="px-4 py-2 text-center">Intermig</th>
-        <th class="px-4 py-2 text-center">Màquina</th>
+        <th class="px-4 py-2 text-center">
+          Ubicacions<br>
+          <span class="text-[11px] text-gray-500">(MAG / INT / MAQ)</span>
+        </th>
         <th class="px-4 py-2 text-center">Mínim</th>
         <th class="px-4 py-2 text-center">Plànol</th>
         <th class="px-4 py-2 text-right">Accions</th>
@@ -108,9 +109,11 @@ ob_start();
         <td class="px-4 py-2"><?= htmlspecialchars($item['name']) ?></td>
         <td class="px-4 py-2"><?= htmlspecialchars($item['category']) ?></td>
         <td class="px-4 py-2 text-center font-semibold"><?= (int)$item['total_stock'] ?></td>
-        <td class="px-4 py-2 text-center"><?= (int)$item['qty_magatzem'] ?></td>
-        <td class="px-4 py-2 text-center"><?= (int)$item['qty_intermig'] ?></td>
-        <td class="px-4 py-2 text-center"><?= (int)$item['qty_maquina'] ?></td>
+        <td class="px-4 py-2 text-center font-mono text-sm">
+          <?= (int)$item['qty_magatzem'] ?> /
+          <?= (int)$item['qty_intermig'] ?> /
+          <?= (int)$item['qty_maquina'] ?>
+        </td>
         <td class="px-4 py-2 text-center"><?= (int)$item['min_stock'] ?></td>
         <td class="px-4 py-2 text-center">
           <?php if (!empty($item['plan_file'])): ?>
@@ -327,6 +330,14 @@ function openItemModal(id, name, min_stock, category, plan_file) {
 
   document.getElementById('editItemModal').classList.remove('hidden');
 }
+
+function closeItemModal() {
+  const modal = document.getElementById('editItemModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+
 
 
 function openUnitModal(id, serial, sububicacio = '', vida_total = '') {

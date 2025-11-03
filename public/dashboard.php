@@ -9,7 +9,7 @@ if (!$pdo) {
 $total_stock = (int)$pdo->query("SELECT COUNT(*) FROM item_units WHERE estat='actiu'")->fetchColumn();
 $total_items = (int)$pdo->query("SELECT COUNT(*) FROM items WHERE active=1")->fetchColumn();
 $low_stock = (int)$pdo->query("
-  SELECT COUNT(*)
+  SELECT SUM(i.min_stock - COALESCE(u.total_cnt, 0)) AS faltants
   FROM items i
   LEFT JOIN (
     SELECT item_id, COUNT(*) AS total_cnt
