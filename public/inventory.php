@@ -157,7 +157,6 @@ ob_start();
                 <th class="px-3 py-1 text-center">Estanteria</th>
                 <th class="px-3 py-1 text-center">Cicles màquina</th>
                 <th class="px-3 py-1 text-center">Vida útil</th>
-                <th class="px-3 py-1 text-center">Estat</th>
                 <th class="px-3 py-1 text-right">Accions</th>
                 </tr>
                 </thead>
@@ -193,8 +192,8 @@ ob_start();
                       <div class="text-[12px] text-gray-600 italic">Sense dades de vida útil</div>
                     <?php endif; ?>
                   </td>
-                  <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['estat']) ?></td>
-                  <td class="px-3 py-1 text-right">
+                  <td class="px-3 py-1 text-right flex justify-end gap-2">
+                    <!-- ✏️ Editar -->
                     <button 
                       class="text-blue-600 hover:text-blue-800"
                       onclick='openUnitModal(
@@ -203,8 +202,17 @@ ob_start();
                         <?= json_encode($u["sububicacio"] ?? "") ?>,
                         <?= json_encode($u["vida_total"] ?? "") ?>
                       )'
-                    >✏️ Editar</button>
+                    >✏️</button>
+
+                   <!-- 🗑️ Donar de baixa unitat -->
+                    <button 
+                      type="button"
+                      class="text-red-600 hover:text-red-800"
+                      onclick='openBaixaModal(<?= (int)$u["id"] ?>, <?= json_encode($u["serial"]) ?>)'
+                    >🗑️</button>
+
                   </td>
+
                 </tr>
                 <?php endforeach; ?>
 
@@ -292,6 +300,37 @@ ob_start();
   </div>
 </div>
 
+<!-- 🗑️ Modal BAIXA UNITAT -->
+<div id="baixaModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+  <div class="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
+    <h3 class="text-lg font-bold mb-4">Donar de baixa unitat</h3>
+    <form id="baixaForm" method="POST" action="../src/update_unit.php">
+      <input type="hidden" name="action" value="baixa_unitat">
+      <input type="hidden" name="id" id="baixa-unit-id">
+
+      <p class="mb-3 text-gray-700 text-sm">
+        Vols donar de baixa la unitat <span id="baixa-unit-serial" class="font-mono font-semibold text-blue-700"></span>?
+      </p>
+
+      <div class="mb-4">
+        <label class="block mb-1 font-medium">Motiu de baixa</label>
+        <select name="baixa_motiu" id="baixa-motiu" required class="w-full p-2 border rounded">
+          <option value="">Selecciona...</option>
+          <option value="descatalogat">Descatalogat</option>
+          <option value="malmesa">Camisa malmesa</option>
+          <option value="fi_vida_util">Fi de vida útil</option>
+          <option value="altres">Altres</option>
+        </select>
+      </div>
+
+      <div class="flex justify-end space-x-2">
+        <button type="button" onclick="closeBaixaModal()" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel·lar</button>
+        <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Confirmar baixa</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 
 
 <script>
@@ -350,6 +389,16 @@ function openUnitModal(id, serial, sububicacio = '', vida_total = '') {
 
 function closeUnitModal() {
   document.getElementById('editUnitModal').classList.add('hidden');
+}
+
+function openBaixaModal(id, serial) {
+  document.getElementById('baixa-unit-id').value = id;
+  document.getElementById('baixa-unit-serial').textContent = serial;
+  document.getElementById('baixaModal').classList.remove('hidden');
+}
+
+function closeBaixaModal() {
+  document.getElementById('baixaModal').classList.add('hidden');
 }
 
 function toggleUnits(id) {

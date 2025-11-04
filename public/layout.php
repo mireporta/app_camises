@@ -82,7 +82,7 @@ function renderPage(string $title, string $content, string $extraScripts = '')
           </span>
         <?php endif; ?>
       </a>
-
+            <a href="moviments.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'moviments.php' ? 'active' : '' ?>">📜 Moviments</a>      
       <a href="exit.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'exit.php' ? 'active' : '' ?>">⬇️ Sortides</a>
       <a href="decommission.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php' ? 'active' : '' ?>">🗑️ Baixes</a>
       <a href="operari.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'operari.php' ? 'active' : '' ?>">⚙️ Operari</a>

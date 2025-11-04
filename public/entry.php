@@ -22,8 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manua
 
         if (!$item) {
             $pdo->prepare("
-                INSERT INTO items (sku, name, category, stock, created_at)
-                VALUES (?, ?, ?, 0, NOW())
+                INSERT INTO items (sku, name, category, stock, active, created_at)
+                VALUES (?, ?, ?, 0, 1, NOW())
             ")->execute([$sku, $sku, $categoria]);
             $itemId = (int)$pdo->lastInsertId();
         } else {
@@ -83,27 +83,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'baixa
     $unitId = (int)($_POST['unit_id'] ?? 0);
 
     if ($unitId > 0) {
-        // Actualitza estat a 'baixa' i neteja ubicació i màquina
-        $pdo->prepare("
-            UPDATE item_units
-            SET estat = 'baixa',
-                ubicacio = NULL,
-                sububicacio = NULL,
-                maquina_actual = NULL,
-                updated_at = NOW()
-            WHERE id = ?
-        ")->execute([$unitId]);
 
-        // Registra moviment
-        $pdo->prepare("
-            INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
-            SELECT iu.id, iu.item_id, 'baixa', 1, 'intermig', 'DESCARTAT', NOW()
-            FROM item_units iu WHERE iu.id = ?
-        ")->execute([$unitId]);
+        // 🔹 1️⃣ Obtenir dades abans de modificar res
+        $stmt = $pdo->prepare("SELECT item_id, ubicacio FROM item_units WHERE id = ?");
+        $stmt->execute([$unitId]);
+        $unit = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        $message = "🗑️ Recanvi donat de baixa correctament.";
+        if ($unit) {
+            // 🔹 2️⃣ Registrar el moviment abans de canviar l’estat
+            $pdo->prepare("
+                INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+                VALUES (?, ?, 'baixa', 1, ?, 'DESCARTAT', NOW())
+            ")->execute([$unitId, $unit['item_id'], $unit['ubicacio'] ?? 'intermig']);
+
+            // 🔹 3️⃣ Actualitzar la unitat com a donada de baixa
+            $pdo->prepare("
+                UPDATE item_units
+                SET estat = 'baixa',
+                    ubicacio = NULL,
+                    sububicacio = NULL,
+                    maquina_actual = NULL,
+                    updated_at = NOW()
+                WHERE id = ?
+            ")->execute([$unitId]);
+
+            $message = "🗑️ Recanvi donat de baixa correctament.";
+        } else {
+            $message = "⚠️ No s'ha trobat la unitat especificada.";
+        }
     }
 }
+
 
 /* 📦 4️⃣ Obtenir recanvis del magatzem intermig */
 $intermigItems = $pdo->query("
@@ -192,30 +202,34 @@ ob_start();
                 <td class="px-4 py-2"><?= htmlspecialchars($item['serial']) ?></td>
                 <td class="px-4 py-2"><?= htmlspecialchars($item['maquina']) ?></td>
                 <td class="px-4 py-2 text-center flex justify-center gap-2">
-                  <!-- Acceptar -->
-                  <form method="POST" style="display:inline;">
+                    <!-- ✅ Acceptar -->
+                  <form method="POST" onsubmit="return confirm('Vols acceptar aquest recanvi al magatzem principal?');">
                     <input type="hidden" name="action" value="acceptar_intermig">
                     <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
                     <button title="Entrar al magatzem"
-                            class="inline-flex items-center justify-center bg-green-500 hover:bg-green-600 text-white rounded-full w-8 h-8 shadow transition">
+                            class="inline-flex items-center justify-center bg-green-500 hover:bg-green-600 
+                                  text-white rounded-full w-8 h-8 shadow transition">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                           stroke-width="3" stroke="white" class="w-5 h-5">
+                          stroke-width="3" stroke="white" class="w-5 h-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                       </svg>
                     </button>
                   </form>
-                  <!-- Donar de baixa -->
-                  <form method="POST" style="display:inline;">
+
+                  <!-- ❌ Donar de baixa -->
+                  <form method="POST" onsubmit="return confirm('Segur que vols donar de baixa aquest recanvi?');">
                     <input type="hidden" name="action" value="baixa_intermig">
                     <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
                     <button title="Donar de baixa"
-                            class="inline-flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-full w-8 h-8 shadow transition">
+                            class="inline-flex items-center justify-center bg-red-500 hover:bg-red-600 
+                                  text-white rounded-full w-8 h-8 shadow transition">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                           stroke-width="3" stroke="white" class="w-5 h-5">
+                          stroke-width="3" stroke="white" class="w-5 h-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
                   </form>
+
                 </td>
               </tr>
             <?php endforeach; ?>

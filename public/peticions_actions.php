@@ -56,7 +56,7 @@ try {
             if ($pdo->query("SHOW TABLES LIKE 'moviments'")->rowCount() > 0) {
                 $mov = $pdo->prepare("
                     INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
-                    VALUES (?, ?, 'servei', 1, 'maquina', ?, NOW())
+                    VALUES (?, ?, 'sortida', 1, 'maquina', ?, NOW())
                 ");
                 $mov->execute([$unit_id, $unit['item_id'], $peticio['maquina']]);
             }
