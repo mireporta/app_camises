@@ -43,3 +43,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header("Location: ../public/inventory.php?msg=item_updated");
     exit;
 }
+
+if (isset($_POST['action']) && $_POST['action'] === 'restaurar_unitat') {
+    $id = (int)($_POST['id'] ?? 0);
+
+    if ($id > 0) {
+        // Actualitza estat a actiu
+        $pdo->prepare("
+            UPDATE item_units
+            SET estat = 'actiu',
+                baixa_motiu = NULL,
+                updated_at = NOW(),
+                ubicacio = 'magatzem'
+            WHERE id = ?
+        ")->execute([$id]);
+
+        // Registra moviment
+        $pdo->prepare("
+            INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+            SELECT iu.id, iu.item_id, 'restauracio', 1, 'magatzem', 'BAIXA_RESTAURADA', NOW()
+            FROM item_units iu WHERE iu.id = ?
+        ")->execute([$id]);
+
+        header("Location: ../public/decommission.php?msg=unit_restored");
+        exit;
+    }
+}
+if (isset($_POST['action']) && $_POST['action'] === 'baixa_unitat') {
+    $id = (int)($_POST['id'] ?? 0);
+    $motiu = trim($_POST['baixa_motiu'] ?? '');
+
+    if ($id > 0) {
+        // Si no arriba motiu, assignem un per defecte
+        if ($motiu === '') $motiu = 'altres';
+
+        $pdo->prepare("
+            UPDATE item_units
+            SET estat = 'inactiu',
+                baixa_motiu = ?,
+                ubicacio = NULL,
+                sububicacio = NULL,
+                maquina_actual = NULL,
+                updated_at = NOW()
+            WHERE id = ?
+        ")->execute([$motiu, $id]);
+
+        // Registra el moviment
+        $pdo->prepare("
+            INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+            SELECT iu.id, iu.item_id, 'inactiu', 1, 'magatzem', ?, NOW()
+            FROM item_units iu WHERE iu.id = ?
+        ")->execute([$motiu, $id]);
+
+        header("Location: ../public/inventory.php?msg=unit_baixa");
+        exit;
+    }
+}

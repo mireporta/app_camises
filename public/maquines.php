@@ -2,30 +2,33 @@
 require_once("../src/config.php");
 require_once("layout.php");
 
-// Obtenim totes les màquines
+// 🏭 Obtenim totes les màquines
 $maquines = $pdo->query("SELECT * FROM maquines ORDER BY codi ASC")->fetchAll(PDO::FETCH_ASSOC);
 
-// Per cada màquina, obtenim els recanvis ubicats i la seva vida útil real
+// 🔧 Per cada màquina, obtenim les unitats instal·lades (ubicació = 'maquina')
 $maquinaItems = [];
 foreach ($maquines as $maq) {
     $stmt = $pdo->prepare("
         SELECT 
             i.sku, 
             i.name, 
-            i.life_expectancy, 
-            i.vida_utilitzada
-        FROM items i
-        JOIN maquina_items mi ON mi.item_id = i.id
-        WHERE mi.maquina = ?
+            iu.serial,
+            iu.vida_total,
+            iu.vida_utilitzada,
+            iu.updated_at
+        FROM item_units iu
+        JOIN items i ON i.id = iu.item_id
+        WHERE iu.ubicacio = 'maquina' AND iu.maquina_actual = ?
+        ORDER BY i.sku ASC
     ");
     $stmt->execute([$maq['codi']]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Calcular vida útil real (%)
+    // Calcul de percentatge de vida restant
     foreach ($items as &$item) {
-        $used = (int)$item['vida_utilitzada'];
-        $total = max(1, (int)$item['life_expectancy']);
-        $vida_percent = max(0, 100 - floor(100 * $used / $total));
+        $vida_total = max(1, (int)$item['vida_total']);
+        $vida_usada = (int)$item['vida_utilitzada'];
+        $vida_percent = max(0, 100 - floor(100 * $vida_usada / $vida_total));
         $item['vida_percent'] = $vida_percent;
     }
     unset($item);
@@ -36,11 +39,11 @@ foreach ($maquines as $maq) {
 ob_start();
 ?>
 
-<h2 class="text-2xl font-bold mb-6">Màquines i recanvis ubicats</h2>
+<h2 class="text-3xl font-bold mb-6">Estat de les màquines</h2>
 
 <div class="space-y-6">
   <?php foreach ($maquines as $maq): ?>
-    <div class="bg-white rounded-xl shadow p-4">
+    <div class="bg-white rounded-xl shadow p-5">
       <div class="flex justify-between items-center mb-3">
         <h3 class="text-xl font-semibold text-blue-700"><?= htmlspecialchars($maq['codi']) ?></h3>
         <span class="text-sm text-gray-500">
@@ -55,7 +58,8 @@ ob_start();
               <tr>
                 <th class="px-4 py-2">SKU</th>
                 <th class="px-4 py-2">Nom</th>
-                <th class="px-4 py-2 text-center">Vida útil</th>
+                <th class="px-4 py-2">Serial</th>
+                <th class="px-4 py-2 text-center">Vida útil restant</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
@@ -63,6 +67,7 @@ ob_start();
                 <tr>
                   <td class="px-4 py-2 font-semibold"><?= htmlspecialchars($item['sku']) ?></td>
                   <td class="px-4 py-2"><?= htmlspecialchars($item['name']) ?></td>
+                  <td class="px-4 py-2 font-mono text-gray-700"><?= htmlspecialchars($item['serial']) ?></td>
                   <td class="px-4 py-2 text-center">
                     <div class="flex items-center justify-center gap-2">
                       <div class="w-32 bg-gray-200 rounded-full h-2">
@@ -72,8 +77,7 @@ ob_start();
                             elseif ($item['vida_percent'] <= 30) echo 'bg-yellow-500';
                             else echo 'bg-green-500';
                           ?> h-2 rounded-full" 
-                          style="width: <?= $item['vida_percent'] ?>%;">
-                        </div>
+                          style="width: <?= $item['vida_percent'] ?>%;"></div>
                       </div>
                       <span class="text-sm <?= $item['vida_percent'] <= 10 ? 'text-red-600 font-semibold' : 'text-gray-700' ?>">
                         <?= $item['vida_percent'] ?>%
@@ -86,7 +90,7 @@ ob_start();
           </table>
         </div>
       <?php else: ?>
-        <p class="text-gray-500">No hi ha recanvis ubicats en aquesta màquina.</p>
+        <p class="text-gray-500 italic">No hi ha recanvis assignats a aquesta màquina.</p>
       <?php endif; ?>
     </div>
   <?php endforeach; ?>

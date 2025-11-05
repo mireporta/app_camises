@@ -75,7 +75,7 @@ function renderPage(string $title, string $content, string $extraScripts = '')
       <a href="entry.php" 
          class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-blue-50 transition 
                 <?= basename($_SERVER['PHP_SELF']) === 'entry.php' ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-gray-700' ?>">
-        <span class="flex items-center gap-2">⬆️ Entrades</span>
+        <span class="flex items-center gap-2">⬇️ Entrades</span>
         <?php if ($pendingIntermig > 0): ?>
           <span class="ml-2 bg-green-500 text-white text-xs font-semibold rounded-full px-2 py-0.5">
             <?= $pendingIntermig ?>
@@ -83,7 +83,7 @@ function renderPage(string $title, string $content, string $extraScripts = '')
         <?php endif; ?>
       </a>
             <a href="moviments.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'moviments.php' ? 'active' : '' ?>">📜 Moviments</a>      
-      <a href="exit.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'exit.php' ? 'active' : '' ?>">⬇️ Sortides</a>
+      <a href="exit.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'exit.php' ? 'active' : '' ?>">⬆️ Sortides</a>
       <a href="decommission.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php' ? 'active' : '' ?>">🗑️ Baixes</a>
       <a href="operari.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'operari.php' ? 'active' : '' ?>">⚙️ Operari</a>
     </nav>

@@ -62,7 +62,7 @@ $stats = $pdo->query("
 ob_start();
 ?>
 
-<h2 class="text-3xl font-bold mb-6">📜 Històric de moviments</h2>
+<h2 class="text-3xl font-bold mb-6">Històric de moviments</h2>
 
 <!-- 🔎 Filtres -->
 <form method="GET" class="mb-6 bg-white p-4 rounded-lg shadow flex flex-wrap gap-4 items-end">
