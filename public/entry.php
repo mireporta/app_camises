@@ -80,40 +80,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'accep
 
 /* ❌ 3️⃣ Donar de baixa recanvi del magatzem intermig */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'baixa_intermig') {
+
     $unitId = (int)($_POST['unit_id'] ?? 0);
+    $motiu  = trim($_POST['baixa_motiu'] ?? '');
+
+    // Validació del motiu
+    $motiuValid = ['malmesa', 'fi_vida_util', 'altres', 'descatalogat'];
+    if ($motiu === '' || !in_array($motiu, $motiuValid, true)) {
+        $message = "❌ Cal seleccionar un motiu de baixa.";
+        return;
+    }
 
     if ($unitId > 0) {
 
-        // 🔹 1️⃣ Obtenir dades abans de modificar res
-        $stmt = $pdo->prepare("SELECT item_id, ubicacio FROM item_units WHERE id = ?");
+        // 1️⃣ Obtenir dades actuals
+        $stmt = $pdo->prepare("SELECT item_id, ubicacio, maquina_actual FROM item_units WHERE id = ?");
         $stmt->execute([$unitId]);
         $unit = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($unit) {
-            // 🔹 2️⃣ Registrar el moviment abans de canviar l’estat
+            // 2️⃣ Registrar moviment
             $pdo->prepare("
-                INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
-                VALUES (?, ?, 'baixa', 1, ?, 'DESCARTAT', NOW())
-            ")->execute([$unitId, $unit['item_id'], $unit['ubicacio'] ?? 'intermig']);
+                INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, observacions, created_at)
+                VALUES (?, ?, 'baixa', 1, ?, ?, ?, NOW())
+            ")->execute([
+                $unitId,
+                $unit['item_id'],
+                $unit['ubicacio'] ?? 'intermig',
+                $unit['maquina_actual'] ?? null,
+                $motiu
+            ]);
 
-            // 🔹 3️⃣ Actualitzar la unitat com a donada de baixa
+            // 3️⃣ Actualitzar unitat
             $pdo->prepare("
                 UPDATE item_units
-                SET estat = 'baixa',
-                    ubicacio = NULL,
-                    sububicacio = NULL,
+                SET estat = 'inactiu',
+                    baixa_motiu = :motiu,
+                    maquina_baixa = :maquina_baixa,
                     maquina_actual = NULL,
+                    ubicacio = 'baixa',
+                    sububicacio = NULL,
                     updated_at = NOW()
-                WHERE id = ?
-            ")->execute([$unitId]);
+                WHERE id = :id
+            ")->execute([
+                ':motiu'         => $motiu,
+                ':maquina_baixa' => $unit['maquina_actual'],
+                ':id'            => $unitId
+            ]);
 
             $message = "🗑️ Recanvi donat de baixa correctament.";
         } else {
-            $message = "⚠️ No s'ha trobat la unitat especificada.";
+            $message = "⚠️ Unitat no trobada.";
         }
     }
 }
-
 
 /* 📦 4️⃣ Obtenir recanvis del magatzem intermig */
 $intermigItems = $pdo->query("
@@ -217,19 +237,24 @@ ob_start();
                   </form>
 
                   <!-- ❌ Donar de baixa -->
-                  <form method="POST" onsubmit="return confirm('Segur que vols donar de baixa aquest recanvi?');">
-                    <input type="hidden" name="action" value="baixa_intermig">
-                    <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
-                    <button title="Donar de baixa"
-                            class="inline-flex items-center justify-center bg-red-500 hover:bg-red-600 
-                                  text-white rounded-full w-8 h-8 shadow transition">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                          stroke-width="3" stroke="white" class="w-5 h-5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </form>
+                  <form method="POST"
+                        onsubmit="return confirm('Segur que vols donar de baixa aquest recanvi?');"
+                        class="flex items-center gap-2">
 
+                      <input type="hidden" name="action" value="baixa_intermig">
+                      <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
+                      <button type="button"
+                              title="Donar de baixa"
+                              onclick="openBaixaModal(<?= (int)$item['unit_id'] ?>)"
+                              class="inline-flex items-center justify-center bg-red-500 hover:bg-red-600 
+                                    text-white rounded-full w-8 h-8 shadow transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                            stroke-width="3" stroke="white" class="w-5 h-5">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+
+                  </form>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -242,7 +267,68 @@ ob_start();
   </div>
 </div>
 
+<!-- 💬 Modal de motiu de baixa des de magatzem intermig -->
+<div id="baixaIntermigModal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-xl shadow-lg p-6 w-full max-w-sm">
+    <h3 class="text-lg font-semibold mb-4">Donar de baixa recanvi</h3>
+    <p class="text-sm text-gray-600 mb-4">
+      Tria el motiu de la baixa per aquest recanvi del magatzem intermig.
+    </p>
+
+    <form method="POST">
+      <input type="hidden" name="action" value="baixa_intermig">
+      <input type="hidden" name="unit_id" id="baixaIntermigUnitId">
+
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        Motiu de la baixa
+      </label>
+      <select name="baixa_motiu"
+              id="baixaIntermigMotiu"
+              required
+              class="w-full border rounded px-2 py-2 text-sm mb-4">
+        <option value="">Selecciona un motiu…</option>
+        <option value="malmesa">Camisa malmesa</option>
+        <option value="fi_vida_util">Fi de vida útil</option>
+        <option value="altres">Altres</option>
+        <option value="descatalogat">Descatalogat</option>
+      </select>
+
+      <div class="flex justify-end gap-2">
+        <button type="button"
+                onclick="closeBaixaModal()"
+                class="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-100">
+          Cancel·lar
+        </button>
+        <button type="submit"
+                onclick="return confirm('Segur que vols donar de baixa aquest recanvi?');"
+                class="px-3 py-2 text-sm rounded bg-red-600 text-white hover:bg-red-700">
+          Confirmar baixa
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  function openBaixaModal(unitId) {
+    // Omplim l’ID de la unitat al formulari del modal
+    document.getElementById('baixaIntermigUnitId').value = unitId;
+    // Netegem el motiu per si de cas
+    document.getElementById('baixaIntermigMotiu').value = '';
+    // Mostrem el modal
+    document.getElementById('baixaIntermigModal').classList.remove('hidden');
+  }
+
+  function closeBaixaModal() {
+    document.getElementById('baixaIntermigModal').classList.add('hidden');
+  }
+</script>
+
+
 <?php
 $content = ob_get_clean();
+
+
 renderPage("Entrades", $content);
 ?>

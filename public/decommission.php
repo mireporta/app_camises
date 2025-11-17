@@ -192,10 +192,26 @@ $total_filtered = array_sum($filteredCounts);
             <td class="px-4 py-2 <?= $colorClass ?>"><?= htmlspecialchars(str_replace('_',' ', $r['baixa_motiu'] ?? '')) ?></td>
             <td class="px-4 py-2 text-center"><?= htmlspecialchars($r['maquina_actual'] ?? '—') ?></td>
             <td class="px-4 py-2 text-right">
-              <form method="POST" action="../src/update_unit.php" onsubmit="return confirm('Vols restaurar aquesta unitat?');" class="inline">
+              <form method="POST"
+                    action="../src/update_unit.php"
+                    onsubmit="return confirm('Vols restaurar aquesta unitat?');"
+                    class="inline-flex items-center gap-2">
                 <input type="hidden" name="action" value="restaurar_unitat">
                 <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
-                <button type="submit" class="text-green-600 hover:text-green-800">♻️ Restaurar</button>
+
+                <!-- Aquí l'usuari indica on deixarà físicament la unitat restaurada -->
+                <input
+                  type="text"
+                  name="sububicacio"
+                  placeholder="Ex: E1-A3"
+                  required
+                  class="border rounded px-2 py-1 text-xs w-24 text-center"
+                  title="Estanteria / sububicació al magatzem"
+                >
+
+                <button type="submit" class="text-green-600 hover:text-green-800 text-sm font-medium">
+                  ♻️ Restaurar
+                </button>
               </form>
             </td>
           </tr>
