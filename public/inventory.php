@@ -39,6 +39,7 @@ $stmt = $pdo->query("
       FROM item_units WHERE estat='actiu' AND ubicacio='maquina' GROUP BY item_id
   ) m ON m.item_id = i.id
   WHERE i.active = 1
+  AND COALESCE(t.total_cnt, 0) > 0   -- 🔹 només items amb almenys 1 unitat activa
   ORDER BY i.sku ASC
 ");
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -90,7 +91,6 @@ ob_start();
     <thead class="bg-gray-100 text-gray-700 uppercase text-xs">
       <tr>
         <th class="px-4 py-2">SKU</th>
-        <th class="px-4 py-2">Nom</th>
         <th class="px-4 py-2">Categoria</th>
         <th class="px-4 py-2 text-center">Total</th>
         <th class="px-4 py-2 text-center">
@@ -106,7 +106,6 @@ ob_start();
       <?php foreach ($items as $item): ?>
       <tr class="hover:bg-gray-50">
         <td class="px-4 py-2 font-semibold"><?= htmlspecialchars($item['sku']) ?></td>
-        <td class="px-4 py-2"><?= htmlspecialchars($item['name']) ?></td>
         <td class="px-4 py-2"><?= htmlspecialchars($item['category']) ?></td>
         <td class="px-4 py-2 text-center font-semibold"><?= (int)$item['total_stock'] ?></td>
         <td class="px-4 py-2 text-center font-mono text-sm">
@@ -137,9 +136,6 @@ ob_start();
 
             <button class="text-indigo-600 hover:text-indigo-800 text-sm font-medium" onclick="toggleUnits(<?= (int)$item['id'] ?>)">
               📦 Unitats
-            </button>
-            <button class="text-red-600 hover:text-red-800 text-sm font-medium" onclick="deleteItem(<?= (int)$item['id'] ?>)">
-              🗑️ Baixa
             </button>
           </div>
         </td>
@@ -239,7 +235,7 @@ ob_start();
 
       <!-- Nom -->
       <label class="block mb-2 text-sm font-medium">Nom</label>
-      <input type="text" name="name" id="edit-item-name" class="w-full mb-3 p-2 border rounded">
+      <input type="text" name="name" id="edit-item-name"   class="w-full mb-1 p-2 border rounded bg-gray-100 text-gray-700" readonly
 
       <!-- Categoria -->
       <label class="block mb-2 text-sm font-medium">Categoria</label>
@@ -274,7 +270,7 @@ ob_start();
   <div class="bg-white rounded-lg shadow-lg w-full max-w-sm p-6">
     <h3 class="text-lg font-bold mb-4">Editar unitat</h3>
     <form id="editUnitForm" method="POST" action="../src/update_unit.php">
-      <input type="hidden" name="unit_id" id="edit-unit-id">
+      <input type="hidden" name="id" id="edit-unit-id">
 
       <div class="mb-4">
         <label class="block mb-1 font-medium">Codi unitat (serial)</label>
