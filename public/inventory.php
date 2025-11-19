@@ -12,7 +12,6 @@ $stmt = $pdo->query("
   SELECT 
     i.id,
     i.sku,
-    i.name,
     i.category,
     i.min_stock,
     i.plan_file,
@@ -126,7 +125,7 @@ ob_start();
            <button class="px-2 py-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
               onclick='openItemModal(
                 <?= (int)$item["id"] ?>,
-                <?= json_encode($item["name"]) ?>,
+                <?= json_encode($item["sku"]) ?>,
                 <?= (int)$item["min_stock"] ?>,
                 <?= json_encode($item["category"]) ?>,
                 <?= json_encode($item["plan_file"]) ?>
@@ -234,8 +233,8 @@ ob_start();
       <input type="hidden" name="id" id="edit-item-id">
 
       <!-- Nom -->
-      <label class="block mb-2 text-sm font-medium">Nom</label>
-      <input type="text" name="name" id="edit-item-name"   class="w-full mb-1 p-2 border rounded bg-gray-100 text-gray-700" readonly
+      <label class="block mb-2 text-sm font-medium">SKU</label>
+      <input type="text" id="edit-item-sku"   class="w-full mb-1 p-2 border rounded bg-gray-100 text-gray-700" readonly
 
       <!-- Categoria -->
       <label class="block mb-2 text-sm font-medium">Categoria</label>
@@ -330,9 +329,9 @@ ob_start();
 
 
 <script>
-function openItemModal(id, name, min_stock, category, plan_file) {
+function openItemModal(id, sku, min_stock, category, plan_file) {
   document.getElementById('edit-item-id').value = id;
-  document.getElementById('edit-item-name').value = name;
+  document.getElementById('edit-item-sku').value = sku;
   document.getElementById('edit-item-min_stock').value = min_stock;
   document.getElementById('edit-item-category').value = category || '';
 
