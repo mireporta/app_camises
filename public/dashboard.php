@@ -25,7 +25,7 @@ $machine_items = (int)$pdo->query("
 
 // Vida útil <10%
 $stmt = $pdo->query("
-  SELECT iu.id, i.sku, i.name, iu.vida_utilitzada, iu.vida_total
+  SELECT iu.id, i.sku, iu.vida_utilitzada, iu.vida_total
   FROM item_units iu
   JOIN items i ON i.id = iu.item_id
   WHERE iu.estat='actiu'
@@ -33,18 +33,21 @@ $stmt = $pdo->query("
 $low_life = 0;
 $items_low_life = [];
 foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $u) {
-  $used = (int)$u['vida_utilitzada'];
+  $used  = (int)$u['vida_utilitzada'];
   $total = max(1, (int)$u['vida_total']);
-  $vida = max(0, 100 - floor(100 * $used / $total));
+  $vida  = max(0, 100 - floor(100 * $used / $total));
   if ($vida < 10) {
     $low_life++;
-    $items_low_life[] = ['sku' => $u['sku'], 'name' => $u['name'], 'vida_percent' => $vida];
+    $items_low_life[] = [
+      'sku'          => $u['sku'],
+      'vida_percent' => $vida
+    ];
   }
 }
 
 // Estoc sota mínim
 $items_low_stock = $pdo->query("
-  SELECT i.id, i.sku, i.name, i.min_stock,
+  SELECT i.id, i.sku, i.min_stock,
          COALESCE(t.total_cnt, 0) AS total_stock
   FROM items i
   LEFT JOIN (
@@ -93,7 +96,7 @@ ob_start();
       <?php else: ?>
         <?php foreach ($items_low_stock as $item): ?>
           <li class="py-2 flex justify-between text-sm">
-            <span><?= htmlspecialchars($item['sku']) ?> - <?= htmlspecialchars($item['name']) ?></span>
+            <span><?= htmlspecialchars($item['sku']) ?></span>
             <span class="text-red-600 font-semibold">
               <?= (int)$item['total_stock'] ?> / min <?= (int)$item['min_stock'] ?>
             </span>
@@ -118,7 +121,7 @@ ob_start();
       <?php else: ?>
         <?php foreach ($items_low_life as $it): ?>
           <li class="py-1 flex justify-between text-sm">
-            <span><?= htmlspecialchars($it['sku']) ?> - <?= htmlspecialchars($it['name']) ?></span>
+            <span><?= htmlspecialchars($it['sku']) ?></span>
             <span class="text-red-600 font-semibold"><?= $it['vida_percent'] ?>%</span>
           </li>
         <?php endforeach; ?>

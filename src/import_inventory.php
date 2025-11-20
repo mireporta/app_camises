@@ -7,7 +7,20 @@ require_once __DIR__ . '/../vendor/autoload.php'; // PhpSpreadsheet
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
+// 🔐 Contrasenya d'importació (canvia-la pel que vulguis)
+const IMPORT_PASSWORD = 'CAMISES2025';
+
+session_start();
+
+// Només acceptem POST amb fitxer i contrasenya correcta
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_FILES['excel_file']['tmp_name'])) {
+    header("Location: ../public/inventory.php");
+    exit;
+}
+
+$pwd = $_POST['import_password'] ?? '';
+if ($pwd !== IMPORT_PASSWORD) {
+    $_SESSION['import_message'] = "❌ Contrasenya d'importació incorrecta.";
     header("Location: ../public/inventory.php");
     exit;
 }
@@ -18,30 +31,28 @@ try {
     $sheet = $spreadsheet->getActiveSheet();
     $rows = $sheet->toArray(null, true, true, true);
 
-    $inserted = 0;
-    $updated = 0;
-    $ignored = 0;
+    $inserted   = 0;
+    $updated    = 0;
+    $ignored    = 0;
     $duplicates = 0;
 
     $seenSkus = [];
 
     foreach ($rows as $index => $row) {
-        if ($index === 1) continue; // salta la capçalera
+        if ($index === 1) continue; // saltem la capçalera
 
-        $sku              = trim((string)($row['A'] ?? ''));
-        $name             = trim((string)($row['B'] ?? ''));
-        $category         = trim((string)($row['C'] ?? ''));
-        $location         = trim((string)($row['D'] ?? ''));
-        $stock            = is_numeric($row['E']) ? (int)$row['E'] : 0;
-        $min_stock        = is_numeric($row['F']) ? (int)$row['F'] : 0;
-        $life_expectancy  = is_numeric($row['G']) ? (int)$row['G'] : 0;
-        $vida_utilitzada  = is_numeric($row['H']) ? (int)$row['H'] : 0;
-        $active           = (int)($row['I'] ?? 1);
+        // 🧾 LLegim columnes (adaptat a l'estructura nova)
+        $sku        = trim((string)($row['A'] ?? ''));
+        $category   = trim((string)($row['B'] ?? ''));
+        $min_stock  = is_numeric($row['C'] ?? null) ? (int)$row['C'] : 0;
+        $active     = ($row['D'] === '' || !isset($row['D']))
+                        ? 1
+                        : (int)$row['D'];
 
-        // --- VALIDACIONS ---
-        if ($sku === '' || $name === '') {
+        // --- VALIDACIONS bàsiques ---
+        if ($sku === '') {
             $ignored++;
-            continue; // sense SKU o nom
+            continue; // sense SKU
         }
 
         if (isset($seenSkus[$sku])) {
@@ -56,48 +67,56 @@ try {
         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($existing) {
-            // ACTUALITZA
+            // 🔄 ACTUALITZA ITEM EXISTENT
             $stmt = $pdo->prepare("
                 UPDATE items
-                SET name = ?, category = ?, location = ?, stock = ?, min_stock = ?, 
-                    life_expectancy = ?, vida_utilitzada = ?, active = ?
+                SET category   = ?,
+                    min_stock  = ?,
+                    active     = ?,
+                    updated_at = NOW()
                 WHERE sku = ?
             ");
             $stmt->execute([
-                $name, $category, $location, $stock, $min_stock,
-                $life_expectancy, $vida_utilitzada, $active, $sku
+                $category,
+                $min_stock,
+                $active,
+                $sku
             ]);
             $updated++;
+
         } else {
-            // INSEREIX
+            // ➕ INSEREIX NOU ITEM
             $stmt = $pdo->prepare("
-                INSERT INTO items (sku, name, category, location, stock, min_stock, life_expectancy, vida_utilitzada, active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO items (sku, category, min_stock, active)
+                VALUES (?, ?, ?, ?)
             ");
             $stmt->execute([
-                $sku, $name, $category, $location, $stock, $min_stock,
-                $life_expectancy, $vida_utilitzada, $active
+                $sku,
+                $category,
+                $min_stock,
+                $active
             ]);
             $inserted++;
         }
     }
 
     // --- MISSATGE DE RESULTATS ---
-    session_start();
     $_SESSION['import_message'] = sprintf(
         "✅ Importació completada:<br>
          ➕ %d nous<br>
          🔄 %d actualitzats<br>
          ⚠️ %d ignorats per dades incorrectes<br>
          ❗ %d duplicats dins el fitxer",
-        $inserted, $updated, $ignored, $duplicates
+        $inserted,
+        $updated,
+        $ignored,
+        $duplicates
     );
 
     header("Location: ../public/inventory.php");
     exit;
 
 } catch (Throwable $e) {
-    session_start();
     $_SESSION['import_message'] = "❌ Error en importar: " . htmlspecialchars($e->getMessage());
     header("Location: ../public/inventory.php");
     exit;

@@ -11,7 +11,6 @@ foreach ($maquines as $maq) {
     $stmt = $pdo->prepare("
         SELECT 
             i.sku, 
-            i.name, 
             iu.serial,
             iu.vida_total,
             iu.vida_utilitzada,
@@ -24,10 +23,10 @@ foreach ($maquines as $maq) {
     $stmt->execute([$maq['codi']]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Calcul de percentatge de vida restant
+    // Càlcul de percentatge de vida restant
     foreach ($items as &$item) {
-        $vida_total = max(1, (int)$item['vida_total']);
-        $vida_usada = (int)$item['vida_utilitzada'];
+        $vida_total   = max(1, (int)$item['vida_total']);
+        $vida_usada   = (int)$item['vida_utilitzada'];
         $vida_percent = max(0, 100 - floor(100 * $vida_usada / $vida_total));
         $item['vida_percent'] = $vida_percent;
     }
@@ -57,7 +56,6 @@ ob_start();
             <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
               <tr>
                 <th class="px-4 py-2">SKU</th>
-                <th class="px-4 py-2">Nom</th>
                 <th class="px-4 py-2">Serial</th>
                 <th class="px-4 py-2 text-center">Vida útil restant</th>
               </tr>
@@ -66,12 +64,11 @@ ob_start();
               <?php foreach ($maquinaItems[$maq['codi']] as $item): ?>
                 <tr>
                   <td class="px-4 py-2 font-semibold"><?= htmlspecialchars($item['sku']) ?></td>
-                  <td class="px-4 py-2"><?= htmlspecialchars($item['name']) ?></td>
                   <td class="px-4 py-2 font-mono text-gray-700"><?= htmlspecialchars($item['serial']) ?></td>
                   <td class="px-4 py-2 text-center">
                     <div class="flex items-center justify-center gap-2">
                       <div class="w-32 bg-gray-200 rounded-full h-2">
-                        <div 
+                        <div
                           class="<?php 
                             if ($item['vida_percent'] <= 10) echo 'bg-red-500';
                             elseif ($item['vida_percent'] <= 30) echo 'bg-yellow-500';

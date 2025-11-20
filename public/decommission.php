@@ -45,9 +45,9 @@ if ($date_to !== '') {
 
 $where_sql = implode(" AND ", $where);
 
-/* === 📋 CONSULTA PRINCIPAL === */
+/* === 📋 CONSULTA PRINCIPAL — SENSE i.name === */
 $stmt = $pdo->prepare("
-    SELECT iu.*, i.sku, i.name, i.category
+    SELECT iu.*, i.sku, i.category
     FROM item_units iu
     JOIN items i ON i.id = iu.item_id
     WHERE $where_sql
@@ -58,7 +58,12 @@ $stmt->execute($params);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* === 🔢 TOTAL PER PAGINAR === */
-$stmtCount = $pdo->prepare("SELECT COUNT(*) FROM item_units iu JOIN items i ON i.id = iu.item_id WHERE $where_sql");
+$stmtCount = $pdo->prepare("
+    SELECT COUNT(*) 
+    FROM item_units iu 
+    JOIN items i ON i.id = iu.item_id 
+    WHERE $where_sql
+");
 $stmtCount->execute($params);
 $total = $stmtCount->fetchColumn();
 $total_pages = ceil($total / $limit);
@@ -69,7 +74,7 @@ ob_start();
 <h2 class="text-3xl font-bold mb-6">Baixes de camises</h2>
 
 <?php
-/* 🧮 Comptadors segons els filtres actuals */
+/* 🧮 Comptadors segons filtres */
 $stmtCountFiltered = $pdo->prepare("
   SELECT baixa_motiu, COUNT(*) AS total
   FROM item_units iu
@@ -199,14 +204,12 @@ $total_filtered = array_sum($filteredCounts);
                 <input type="hidden" name="action" value="restaurar_unitat">
                 <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
 
-                <!-- Aquí l'usuari indica on deixarà físicament la unitat restaurada -->
                 <input
                   type="text"
                   name="sububicacio"
                   placeholder="Ex: E1-A3"
                   required
                   class="border rounded px-2 py-1 text-xs w-24 text-center"
-                  title="Estanteria / sububicació al magatzem"
                 >
 
                 <button type="submit" class="text-green-600 hover:text-green-800 text-sm font-medium">
@@ -235,7 +238,7 @@ $total_filtered = array_sum($filteredCounts);
   </div>
 <?php endif; ?>
 
-<!-- 📊 Chart.js Script -->
+<!-- 📊 Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 const dataCounts = {
@@ -270,7 +273,6 @@ new Chart(ctx, {
   }
 });
 
-// Llegenda pròpia horitzontal
 const legendContainer = document.getElementById('baixesLegend');
 const legends = [
   { label: 'Malmesa', color: COLORS.malmesa },
@@ -285,7 +287,6 @@ legendContainer.innerHTML = legends.map(l => `
   </div>
 `).join('');
 </script>
-
 
 <?php
 $content = ob_get_clean();

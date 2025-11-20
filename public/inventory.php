@@ -75,12 +75,15 @@ ob_start();
       📤 <span>Exportar Excel</span>
     </a>
 
-    <form action="../src/import_inventory.php" method="POST" enctype="multipart/form-data" class="flex items-center gap-2">
-      <label class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer flex items-center gap-2">
-        📥 <span>Importar Excel</span>
-        <input type="file" name="excel_file" accept=".xlsx" class="hidden" onchange="this.form.submit()">
-      </label>
-    </form>
+      <form id="import-form" action="../src/import_inventory.php" method="POST" enctype="multipart/form-data" class="flex items-center gap-2">
+        <!-- aquí guardarem la contrasenya abans d’enviar -->
+        <input type="hidden" name="import_password" id="import-password">
+
+        <label class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer flex items-center gap-2">
+          📥 <span>Importar Excel</span>
+          <input type="file" name="excel_file" id="import-file" accept=".xlsx" class="hidden">
+        </label>
+      </form>
   </div>
 </div>
 
@@ -232,10 +235,10 @@ ob_start();
     <form id="editItemForm" method="POST" action="../src/update_item.php" enctype="multipart/form-data">
       <input type="hidden" name="id" id="edit-item-id">
 
-      <!-- Nom -->
+      <!-- SKU -->
       <label class="block mb-2 text-sm font-medium">SKU</label>
-      <input type="text" id="edit-item-sku"   class="w-full mb-1 p-2 border rounded bg-gray-100 text-gray-700" readonly
-
+      <input type="text" id="edit-item-sku" class="w-full mb-1 p-2 border rounded bg-gray-100 text-gray-700" readonly>
+      
       <!-- Categoria -->
       <label class="block mb-2 text-sm font-medium">Categoria</label>
       <input type="text" name="category" id="edit-item-category" class="w-full mb-3 p-2 border rounded" placeholder="Ex: Camises, Punzons...">
@@ -413,6 +416,28 @@ function deleteItem(id) {
       else alert('❌ Error: ' + (data.error || 'No s’ha pogut donar de baixa'));
     }).catch(err => alert('❌ ' + err.message));
 }
+
+// 🔐 Gestió de la contrasenya d'importació d'Excel
+const importForm = document.getElementById('import-form');
+const importFile = document.getElementById('import-file');
+const importPwd  = document.getElementById('import-password');
+
+if (importForm && importFile && importPwd) {
+  importFile.addEventListener('change', function () {
+    if (!this.files || this.files.length === 0) return;
+
+    const pwd = prompt("Introdueix la contrasenya d'importació:");
+    if (!pwd) {
+      // Cancel·lat → esborrem el fitxer perquè no s'enviï res
+      this.value = '';
+      return;
+    }
+
+    importPwd.value = pwd;
+    importForm.submit();
+  });
+}
+
 </script>
 
 <?php

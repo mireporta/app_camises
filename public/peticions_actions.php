@@ -43,6 +43,7 @@ try {
                 UPDATE item_units
                 SET ubicacio = 'maquina',
                     maquina_actual = ?,
+                    cicles_maquina = cicles_maquina + 1,
                     updated_at = NOW()
                 WHERE id = ?
             ");

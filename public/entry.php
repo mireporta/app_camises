@@ -6,50 +6,57 @@ $message = "";
 
 /* 🧾 1️⃣ Registrar entrada manual (compra o proveïdor) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manual') {
-    $sku = trim($_POST['sku'] ?? '');
-    $serial = trim($_POST['serial'] ?? '');
-    $estanteria = trim($_POST['estanteria'] ?? '');
-    $ubicacio = 'magatzem';
+    $sku         = trim($_POST['sku'] ?? '');
+    $serial      = trim($_POST['serial'] ?? '');
+    $estanteria  = trim($_POST['estanteria'] ?? '');
+    $ubicacio    = 'magatzem';
     $sububicacio = trim($_POST['estanteria'] ?? '');
-    $origen = trim($_POST['origen'] ?? 'principal');
-    $categoria = trim($_POST['categoria'] ?? '');
-    $vida_total = (int)($_POST['vida_total'] ?? 0);
+    $origen      = trim($_POST['origen'] ?? 'principal');
+    $categoria   = trim($_POST['categoria'] ?? '');
+    $vida_total  = (int)($_POST['vida_total'] ?? 0);
 
     if ($sku && $serial) {
+        // busquem si ja existeix l'item
         $stmt = $pdo->prepare("SELECT id FROM items WHERE sku = ?");
         $stmt->execute([$sku]);
         $item = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$item) {
+            // ➕ Nou item: ja no hi ha 'name' ni 'stock'
             $pdo->prepare("
-                INSERT INTO items (sku, name, category, stock, active, created_at)
-                VALUES (?, ?, ?, 0, 1, NOW())
-            ")->execute([$sku, $sku, $categoria]);
+                INSERT INTO items (sku, category, min_stock, active, created_at)
+                VALUES (?, ?, 0, 1, NOW())
+            ")->execute([$sku, $categoria]);
             $itemId = (int)$pdo->lastInsertId();
         } else {
             $itemId = (int)$item['id'];
             if ($categoria) {
-                $pdo->prepare("UPDATE items SET category = ? WHERE id = ?")->execute([$categoria, $itemId]);
+                $pdo->prepare("UPDATE items SET category = ? WHERE id = ?")
+                    ->execute([$categoria, $itemId]);
             }
         }
 
+        // Comprovem que no existeixi el serial
         $check = $pdo->prepare("SELECT COUNT(*) FROM item_units WHERE serial = ?");
         $check->execute([$serial]);
         if ($check->fetchColumn() > 0) {
             $message = "⚠️ Ja existeix una unitat amb el serial $serial.";
         } else {
+            // Creem la unitat
             $pdo->prepare("
                 INSERT INTO item_units (item_id, serial, ubicacio, sububicacio, estat, vida_utilitzada, vida_total, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 'actiu', 0, ?, NOW(), NOW())
             ")->execute([$itemId, $serial, 'magatzem', $sububicacio, $vida_total]);
 
+            // Registrem moviment d'entrada
             $pdo->prepare("
                 INSERT INTO moviments (item_id, item_unit_id, tipus, quantitat, ubicacio, maquina, created_at)
-                SELECT ?, id, 'entrada', 1, ?, ?, NOW() FROM item_units WHERE serial = ?
+                SELECT ?, id, 'entrada', 1, ?, ?, NOW()
+                FROM item_units
+                WHERE serial = ?
             ")->execute([$itemId, 'magatzem', $origen, $serial]);
 
-            $pdo->prepare("UPDATE items SET stock = stock + 1 WHERE id = ?")->execute([$itemId]);
-
+            // ❌ Ja no toquem items.stock (no existeix, l'estoc ve de item_units)
             $message = "✅ Entrada registrada correctament ($serial a $ubicacio).";
         }
     } else {
@@ -88,10 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'baixa
     $motiuValid = ['malmesa', 'fi_vida_util', 'altres', 'descatalogat'];
     if ($motiu === '' || !in_array($motiu, $motiuValid, true)) {
         $message = "❌ Cal seleccionar un motiu de baixa.";
-        return;
-    }
-
-    if ($unitId > 0) {
+        // no fem return per tal que es mostri la pàgina igualment
+    } elseif ($unitId > 0) {
 
         // 1️⃣ Obtenir dades actuals
         $stmt = $pdo->prepare("SELECT item_id, ubicacio, maquina_actual FROM item_units WHERE id = ?");
@@ -137,8 +142,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'baixa
 
 /* 📦 4️⃣ Obtenir recanvis del magatzem intermig */
 $intermigItems = $pdo->query("
-    SELECT iu.id AS unit_id, i.id AS item_id, i.sku, i.name,
-       iu.serial, iu.sububicacio, iu.maquina_actual AS maquina, iu.updated_at
+    SELECT iu.id AS unit_id,
+           i.id AS item_id,
+           i.sku,
+           iu.serial,
+           iu.sububicacio,
+           iu.maquina_actual AS maquina,
+           iu.updated_at
     FROM item_units iu
     JOIN items i ON i.id = iu.item_id
     WHERE iu.estat = 'actiu' AND iu.ubicacio = 'intermig'
@@ -222,7 +232,7 @@ ob_start();
                 <td class="px-4 py-2"><?= htmlspecialchars($item['serial']) ?></td>
                 <td class="px-4 py-2"><?= htmlspecialchars($item['maquina']) ?></td>
                 <td class="px-4 py-2 text-center flex justify-center gap-2">
-                    <!-- ✅ Acceptar -->
+                  <!-- ✅ Acceptar -->
                   <form method="POST" onsubmit="return confirm('Vols acceptar aquest recanvi al magatzem principal?');">
                     <input type="hidden" name="action" value="acceptar_intermig">
                     <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
@@ -241,18 +251,18 @@ ob_start();
                         onsubmit="return confirm('Segur que vols donar de baixa aquest recanvi?');"
                         class="flex items-center gap-2">
 
-                      <input type="hidden" name="action" value="baixa_intermig">
-                      <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
-                      <button type="button"
-                              title="Donar de baixa"
-                              onclick="openBaixaModal(<?= (int)$item['unit_id'] ?>)"
-                              class="inline-flex items-center justify-center bg-red-500 hover:bg-red-600 
-                                    text-white rounded-full w-8 h-8 shadow transition">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                            stroke-width="3" stroke="white" class="w-5 h-5">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                    <input type="hidden" name="action" value="baixa_intermig">
+                    <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
+                    <button type="button"
+                            title="Donar de baixa"
+                            onclick="openBaixaModal(<?= (int)$item['unit_id'] ?>)"
+                            class="inline-flex items-center justify-center bg-red-500 hover:bg-red-600 
+                                  text-white rounded-full w-8 h-8 shadow transition">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                          stroke-width="3" stroke="white" class="w-5 h-5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
 
                   </form>
                 </td>
@@ -312,11 +322,8 @@ ob_start();
 
 <script>
   function openBaixaModal(unitId) {
-    // Omplim l’ID de la unitat al formulari del modal
     document.getElementById('baixaIntermigUnitId').value = unitId;
-    // Netegem el motiu per si de cas
     document.getElementById('baixaIntermigMotiu').value = '';
-    // Mostrem el modal
     document.getElementById('baixaIntermigModal').classList.remove('hidden');
   }
 
@@ -325,10 +332,7 @@ ob_start();
   }
 </script>
 
-
 <?php
 $content = ob_get_clean();
-
-
 renderPage("Entrades", $content);
 ?>

@@ -8,15 +8,31 @@ if (isset($_GET['msg'])) {
     $messages = [
         'peticio_ok' => "✅ Petició enviada correctament!",
         'vida_ok' => "🧮 Vida actualitzada correctament!",
-        'retorn_ok' => "↩ Camisa retornada al magatzem intermig."
+        'retorn_ok' => "↩ Camisa retornada al magatzem intermig.",
+        'sku_invalid'  => "❌ El codi de camisa (SKU) no és vàlid."
     ];
     $message = $messages[$_GET['msg']] ?? '';
 }
 
 /* 📥 1. Fer petició */
 if (isset($_POST['action']) && $_POST['action'] === 'peticio') {
-    $maquina = $_POST['maquina'];
-    $sku = trim($_POST['sku']);
+    $maquina = $_POST['maquina'] ?? '';
+    $sku     = trim($_POST['sku'] ?? '');
+
+    // Validació bàsica
+    if ($maquina === '' || $sku === '') {
+        header("Location: operari.php?msg=sku_invalid");
+        exit;
+    }
+
+    // ✅ Comprovar que el SKU existeix i està actiu
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM items WHERE sku = ? AND active = 1");
+    $stmt->execute([$sku]);
+    if ($stmt->fetchColumn() == 0) {
+        // SKU inventat o inactiu → no acceptem la petició
+        header("Location: operari.php?msg=sku_invalid");
+        exit;
+    }
 
     // Registra petició
     $stmt = $pdo->prepare("INSERT INTO peticions (maquina, sku, estat) VALUES (?, ?, 'pendent')");
@@ -120,6 +136,10 @@ foreach ($maquines as $m) {
         ORDER BY i.sku ASC
     ");
     $stmt->execute([$m['codi']]);
+    // 🔍 Obtenir llista de SKU actius per l'autocompletat
+    $skusDisponibles = $pdo->query("SELECT sku FROM items WHERE active = 1 ORDER BY sku ASC")
+                       ->fetchAll(PDO::FETCH_COLUMN);
+
     $unitsPerMaquina[$m['codi']] = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -150,9 +170,25 @@ ob_start();
         </select>
       </div>
 
-      <div>
+     <div>
         <label class="block text-sm font-medium">Codi camisa (SKU)</label>
-        <input type="text" name="sku" required class="w-full border p-2 rounded" autofocus>
+        <input
+          type="text"
+          name="sku"
+          id="sku-input"
+          list="sku-list"
+          required
+          class="w-full border p-2 rounded"
+          placeholder="Comença a escriure el SKU..."
+          autofocus
+          autocomplete="off"
+        >
+
+        <datalist id="sku-list">
+          <?php foreach ($skusDisponibles as $sku): ?>
+            <option value="<?= htmlspecialchars($sku) ?>"></option>
+          <?php endforeach; ?>
+        </datalist>
       </div>
 
       <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">
@@ -282,6 +318,27 @@ ob_start();
     }, 1200);
   }
 </script>
+
+<script>
+  // Llista de SKU vàlids generada des de PHP
+  const validSkus = <?= json_encode($skusDisponibles) ?>;
+  const validSkuSet = new Set(validSkus);
+
+  // Trobar el formulari de "Fer petició"
+  const peticioForm = document.querySelector('form input[name="action"][value="peticio"]').form;
+  const skuInput = document.getElementById('sku-input');
+
+  peticioForm.addEventListener('submit', function (e) {
+    const sku = (skuInput.value || '').trim();
+    if (!validSkuSet.has(sku)) {
+      e.preventDefault();
+      alert('❌ El codi de camisa (SKU) no és vàlid. Tria un dels suggerits.');
+      skuInput.focus();
+      return false;
+    }
+  });
+</script>
+
 
 <?php
 $content = ob_get_clean();
