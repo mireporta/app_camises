@@ -93,7 +93,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
             $pdo->prepare("
                 UPDATE item_units
                 SET ubicacio = 'intermig',
-                    maquina_actual = NULL,
                     updated_at = NOW()
                 WHERE id = ?
             ")->execute([$unit_id]);

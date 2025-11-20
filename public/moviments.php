@@ -5,26 +5,26 @@ require_once("layout.php");
 // 📅 Filtratge per tipus, dates i cerca
 $tipus = $_GET['tipus'] ?? '';
 $inici = $_GET['inici'] ?? '';
-$fi = $_GET['fi'] ?? '';
+$fi    = $_GET['fi'] ?? '';
 $cerca = trim($_GET['cerca'] ?? '');
 
-$where = [];
+$where  = [];
 $params = [];
 
 if ($tipus && $tipus !== 'tots') {
-    $where[] = "m.tipus = ?";
+    $where[]  = "m.tipus = ?";
     $params[] = $tipus;
 }
 if ($inici) {
-    $where[] = "DATE(m.created_at) >= ?";
+    $where[]  = "DATE(m.created_at) >= ?";
     $params[] = $inici;
 }
 if ($fi) {
-    $where[] = "DATE(m.created_at) <= ?";
+    $where[]  = "DATE(m.created_at) <= ?";
     $params[] = $fi;
 }
 if ($cerca !== '') {
-    $where[] = "(i.sku LIKE ? OR iu.serial LIKE ?)";
+    $where[]  = "(i.sku LIKE ? OR iu.serial LIKE ?)";
     $params[] = "%$cerca%";
     $params[] = "%$cerca%";
 }
@@ -37,14 +37,14 @@ $stmt = $pdo->prepare("
         m.id,
         m.tipus,
         m.quantitat,
-        m.ubicacio AS origen,
-        m.maquina AS desti,
+        m.ubicacio,
+        m.maquina,
         m.created_at,
         i.sku,
         iu.serial
     FROM moviments m
     LEFT JOIN item_units iu ON m.item_unit_id = iu.id
-    LEFT JOIN items i ON i.id = iu.item_id
+    LEFT JOIN items i       ON i.id = iu.item_id
     $whereSql
     ORDER BY m.created_at DESC
     LIMIT 300
@@ -72,8 +72,8 @@ ob_start();
       <option value="tots" <?= $tipus === 'tots' ? 'selected' : '' ?>>Tots</option>
       <option value="entrada" <?= $tipus === 'entrada' ? 'selected' : '' ?>>Entrades</option>
       <option value="sortida" <?= $tipus === 'sortida' ? 'selected' : '' ?>>Sortides</option>
-      <option value="retorn" <?= $tipus === 'retorn' ? 'selected' : '' ?>>Retorns</option>
-      <option value="baixa" <?= $tipus === 'baixa' ? 'selected' : '' ?>>Baixes</option>
+      <option value="retorn"  <?= $tipus === 'retorn'  ? 'selected' : '' ?>>Retorns</option>
+      <option value="baixa"   <?= $tipus === 'baixa'   ? 'selected' : '' ?>>Baixes</option>
     </select>
   </div>
 
@@ -108,7 +108,7 @@ ob_start();
   <?php
   $colors = [
     'entrada' => 'bg-green-100 text-green-700',
-    'sortida'  => 'bg-blue-100 text-blue-700',
+    'sortida' => 'bg-blue-100 text-blue-700',
     'retorn'  => 'bg-yellow-100 text-yellow-700',
     'baixa'   => 'bg-red-100 text-red-700'
   ];
@@ -134,25 +134,83 @@ ob_start();
     </thead>
     <tbody class="divide-y divide-gray-100">
       <?php if (empty($moviments)): ?>
-        <tr><td colspan="6" class="px-4 py-4 text-gray-500 text-center italic">No s’han trobat moviments</td></tr>
+        <tr>
+          <td colspan="6" class="px-4 py-4 text-gray-500 text-center italic">
+            No s’han trobat moviments
+          </td>
+        </tr>
       <?php else: ?>
         <?php foreach ($moviments as $m): ?>
           <?php
             $color = match($m['tipus']) {
               'entrada' => 'text-green-600',
-              'sortida'  => 'text-blue-600',
+              'sortida' => 'text-blue-600',
               'retorn'  => 'text-yellow-600',
               'baixa'   => 'text-red-600',
               default   => 'text-gray-600'
             };
+
+            $ubicacio = $m['ubicacio'] ?? '';
+            $maquina  = $m['maquina'] ?? '';
+
+            // 💡 Traduïm ubicacio/maquina a ORIGEN / DESTÍ humans
+            $origen = '—';
+            $desti  = '—';
+
+            switch ($m['tipus']) {
+              case 'entrada':
+                // De proveïdor (principal / intermig...) cap al magatzem
+                $origen = $maquina !== '' ? $maquina : 'proveïdor';
+                $desti  = 'magatzem';
+                break;
+
+              case 'sortida':
+                // Del magatzem cap a màquina X
+                $origen = 'magatzem';
+                $desti  = $maquina !== '' ? 'màquina ' . $maquina : 'maquina';
+                break;
+
+              case 'retorn':
+                if ($ubicacio === 'intermig') {
+                  // De màquina X al magatzem intermig
+                  $origen = $maquina !== '' ? 'màquina ' . $maquina : 'maquina';
+                  $desti  = 'intermig';
+                } elseif ($ubicacio === 'magatzem') {
+                  // Restauració de baixa cap al magatzem
+                  $origen = $maquina !== '' ? 'màquina ' . $maquina : 'baixa';
+                  $desti  = 'magatzem';
+                } else {
+                  $origen = $maquina ?: '—';
+                  $desti  = $ubicacio ?: '—';
+                }
+                break;
+
+              case 'baixa':
+                // On estava → baixa
+                if ($ubicacio === 'maquina') {
+                  $origen = $maquina !== '' ? 'màquina ' . $maquina : 'maquina';
+                } else {
+                  $origen = $ubicacio ?: '—';
+                }
+                $desti = 'baixa';
+                break;
+
+              default:
+                $origen = $ubicacio ?: '—';
+                $desti  = $maquina ?: '—';
+            }
           ?>
           <tr class="hover:bg-gray-50">
-            <td class="px-4 py-2 text-gray-500"><?= date('d/m/Y H:i', strtotime($m['created_at'])) ?></td>
-            <td class="px-4 py-2 font-semibold <?= $color ?>"><?= ucfirst($m['tipus']) ?></td>
+            <td class="px-4 py-2 text-gray-500">
+              <?= date('d/m/Y H:i', strtotime($m['created_at'])) ?>
+            </td>
+            <td class="px-4 py-2 font-semibold <?= $color ?>">
+              <?= ucfirst($m['tipus']) ?>
+            </td>
             <td class="px-4 py-2"><?= htmlspecialchars($m['sku'] ?? '—') ?></td>
             <td class="px-4 py-2 font-mono"><?= htmlspecialchars($m['serial'] ?? '—') ?></td>
-            <td class="px-4 py-2"><?= htmlspecialchars($m['origen'] ?? '—') ?></td>
-            <td class="px-4 py-2"><?= htmlspecialchars($m['desti'] ?? '—') ?></td>
+            <td class="px-4 py-2"><?= htmlspecialchars($origen) ?></td>
+            <td class="px-4 py-2"><?= htmlspecialchars($desti) ?></td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>
