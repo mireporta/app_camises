@@ -10,32 +10,42 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
 try {
+    // Ara aquesta funció ha de retornar dades agregades segons el nou model
     $items = find_all_items($pdo);
 
     $spreadsheet = new Spreadsheet();
     $sheet = $spreadsheet->getActiveSheet();
 
-    // Capçaleres
+    // Capçaleres adaptades al nou esquema
     $headers = [
-        'SKU','Nom','Categoria','Posició (estanteria)',
-        'Estoc','Estoc mínim','Vida teòrica (unitats)','Vida utilitzada (unitats)','Actiu'
+        'SKU',
+        'Categoria',
+        'Estoc total',
+        'MAG',
+        'INT',
+        'MAQ',
+        'Estoc mínim',
+        'Actiu',
     ];
     $sheet->fromArray($headers, null, 'A1');
 
     // Files
     $r = 2;
     foreach ($items as $row) {
+        // Columna A: sempre SKU com a text
         $sheet->setCellValueExplicit("A{$r}", (string)($row['sku'] ?? ''), DataType::TYPE_STRING);
+
+        // De la B en endavant
         $sheet->fromArray([
-            $row['name'] ?? '',
-            $row['category'] ?? '',
-            $row['location'] ?? '',
-            (int)($row['stock'] ?? 0),
-            (int)($row['min_stock'] ?? 0),
-            (int)($row['life_expectancy'] ?? 0),
-            (int)($row['vida_utilitzada'] ?? 0),
-            (int)($row['active'] ?? 0),
+            $row['category']       ?? '',
+            (int)($row['total_stock']   ?? 0),
+            (int)($row['qty_magatzem']  ?? 0),
+            (int)($row['qty_intermig']  ?? 0),
+            (int)($row['qty_maquina']   ?? 0),
+            (int)($row['min_stock']     ?? 0),
+            (int)($row['active']        ?? 0),
         ], null, "B{$r}");
+
         $r++;
     }
 

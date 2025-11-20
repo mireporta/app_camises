@@ -8,28 +8,29 @@ require_once __DIR__ . '/../vendor/autoload.php'; // PhpSpreadsheet
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 // 🔐 Contrasenya d'importació (canvia-la pel que vulguis)
-const IMPORT_PASSWORD = 'CAMISES2025';
+const IMPORT_PASSWORD = 'camises2025';
 
 session_start();
 
-// Només acceptem POST amb fitxer i contrasenya correcta
+// Només acceptem POST amb fitxer
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_FILES['excel_file']['tmp_name'])) {
     header("Location: ../public/inventory.php");
     exit;
 }
 
+// 🔐 Validació de contrasenya d'importació
 $pwd = $_POST['import_password'] ?? '';
 if ($pwd !== IMPORT_PASSWORD) {
-    $_SESSION['import_message'] = "❌ Contrasenya d'importació incorrecta.";
+    $_SESSION['import_message'] = "❌ Contrasenya incorrecta. Importació cancel·lada.";
     header("Location: ../public/inventory.php");
     exit;
 }
 
 try {
-    $filePath = $_FILES['excel_file']['tmp_name'];
+    $filePath    = $_FILES['excel_file']['tmp_name'];
     $spreadsheet = IOFactory::load($filePath);
-    $sheet = $spreadsheet->getActiveSheet();
-    $rows = $sheet->toArray(null, true, true, true);
+    $sheet       = $spreadsheet->getActiveSheet();
+    $rows        = $sheet->toArray(null, true, true, true);
 
     $inserted   = 0;
     $updated    = 0;
@@ -41,11 +42,15 @@ try {
     foreach ($rows as $index => $row) {
         if ($index === 1) continue; // saltem la capçalera
 
-        // 🧾 LLegim columnes (adaptat a l'estructura nova)
-        $sku        = trim((string)($row['A'] ?? ''));
-        $category   = trim((string)($row['B'] ?? ''));
-        $min_stock  = is_numeric($row['C'] ?? null) ? (int)$row['C'] : 0;
-        $active     = ($row['D'] === '' || !isset($row['D']))
+        // 🧾 Llegim columnes (adaptat a l'estructura nova)
+        // A: SKU
+        // B: Categoria
+        // C: Estoc mínim
+        // D: Actiu (0/1)
+        $sku       = trim((string)($row['A'] ?? ''));
+        $category  = trim((string)($row['B'] ?? ''));
+        $min_stock = is_numeric($row['C'] ?? null) ? (int)$row['C'] : 0;
+        $active    = ($row['D'] === '' || !isset($row['D']))
                         ? 1
                         : (int)$row['D'];
 

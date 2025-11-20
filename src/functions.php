@@ -1,82 +1,122 @@
 <?php
-// src/functions.php - funcions comunes
-function find_all_items($pdo) {
-    $stmt = $pdo->query("
+// src/functions.php - funcions comunes (v2, amb item_units)
+
+/**
+ * Retorna tots els ítems amb estoc agregat des de item_units.
+ * Camps retornats:
+ *  - id
+ *  - sku
+ *  - category
+ *  - min_stock
+ *  - active
+ *  - total_stock
+ *  - qty_magatzem
+ *  - qty_intermig
+ *  - qty_maquina
+ */
+function find_all_items(PDO $pdo): array
+{
+    $sql = "
         SELECT 
             i.id,
             i.sku,
-            i.name,
             i.category,
-            i.location,
-            i.stock,
             i.min_stock,
-            i.life_expectancy,
-            COALESCE(i.vida_utilitzada, 0) AS vida_utilitzada,
-            i.active
+            i.active,
+            COALESCE(t.total_cnt, 0)     AS total_stock,
+            COALESCE(g.cnt_magatzem, 0)  AS qty_magatzem,
+            COALESCE(im.cnt_intermig, 0) AS qty_intermig,
+            COALESCE(m.cnt_maquina, 0)   AS qty_maquina
         FROM items i
+        LEFT JOIN (
+            SELECT item_id, COUNT(*) AS total_cnt
+            FROM item_units
+            WHERE estat = 'actiu'
+            GROUP BY item_id
+        ) t ON t.item_id = i.id
+        LEFT JOIN (
+            SELECT item_id, COUNT(*) AS cnt_magatzem
+            FROM item_units
+            WHERE estat = 'actiu' AND ubicacio = 'magatzem'
+            GROUP BY item_id
+        ) g ON g.item_id = i.id
+        LEFT JOIN (
+            SELECT item_id, COUNT(*) AS cnt_intermig
+            FROM item_units
+            WHERE estat = 'actiu' AND ubicacio = 'intermig'
+            GROUP BY item_id
+        ) im ON im.item_id = i.id
+        LEFT JOIN (
+            SELECT item_id, COUNT(*) AS cnt_maquina
+            FROM item_units
+            WHERE estat = 'actiu' AND ubicacio = 'maquina'
+            GROUP BY item_id
+        ) m ON m.item_id = i.id
         ORDER BY i.sku ASC
-    ");
+    ";
+
+    $stmt = $pdo->query($sql);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-
-function find_item_by_sku($pdo, $sku) {
+function find_item_by_sku(PDO $pdo, string $sku)
+{
     $stmt = $pdo->prepare('SELECT * FROM items WHERE sku = ?');
     $stmt->execute([$sku]);
-    return $stmt->fetch();
+    return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-function update_stock($pdo, $item_id, $delta) {
-    $stmt = $pdo->prepare('UPDATE items SET stock = GREATEST(0, stock + ?) WHERE id = ?');
-    $stmt->execute([$delta, $item_id]);
+/**
+ * Funcions legacy de la v1
+ * Ja no fem servir items.stock ni la taula operations.
+ * Les deixem com a no-op o retornant buit per no rebentar si alguna crida antiga queda viva.
+ */
+
+function update_stock(PDO $pdo, int $item_id, int $delta): void
+{
+    // V2: l’estoc es calcula a partir de item_units. No fem res aquí.
+    return;
 }
 
-function record_operation($pdo, $item_id, $type, $quantity, $source=null, $destination=null, $machine=null, $user=null, $reason=null) {
-    $stmt = $pdo->prepare('INSERT INTO operations (item_id, type, quantity, source, destination, machine, created_by, reason) VALUES (?,?,?,?,?,?,?,?)');
-    $stmt->execute([$item_id, $type, $quantity, $source, $destination, $machine, $user, $reason]);
+function record_operation(PDO $pdo, $item_id, $type, $quantity, $source=null, $destination=null, $machine=null, $user=null, $reason=null): void
+{
+    // V2: substituït per la taula moviments. Aquesta funció queda buida.
+    return;
 }
 
-function top_used_items($pdo, $limit = 10) {
-    $sql = 'SELECT i.*, COALESCE(SUM(o.quantity),0) as used FROM items i LEFT JOIN operations o ON o.item_id = i.id AND o.type = "exit" GROUP BY i.id ORDER BY used DESC LIMIT ?';
-    $stmt = $pdo->prepare($sql);
-    $stmt->bindValue(1, (int)$limit, PDO::PARAM_INT);
-    $stmt->execute();
-    return $stmt->fetchAll();
+function top_used_items(PDO $pdo, int $limit = 10): array
+{
+    // V2: aquesta lògica hauria d’anar contra moviments. De moment retornem array buit.
+    return [];
 }
 
-function items_low_life($pdo) {
-    $sql = 'SELECT *, (stock / NULLIF(life_expectancy,0)) AS life_ratio FROM items WHERE life_expectancy > 0 AND (stock / life_expectancy) <= 0.10 ORDER BY life_ratio ASC';
-    $stmt = $pdo->query($sql);
-    return $stmt->fetchAll();
+function items_low_life(PDO $pdo): array
+{
+    // V2: ja no hi ha life_expectancy a items. La vida útil és per unitat.
+    return [];
 }
 
-function items_below_min($pdo) {
-    $stmt = $pdo->query('SELECT * FROM items WHERE stock < min_stock ORDER BY (min_stock - stock) DESC');
-    return $stmt->fetchAll();
+function items_below_min(PDO $pdo): array
+{
+    // V2: ja no hi ha camp stock a items. Es calcula a partir de item_units.
+    return [];
 }
 
-function decommission_item($pdo, $sku, $quantity, $reason, $user='system') {
-    $stmt = $pdo->prepare('SELECT * FROM items WHERE sku = ?');
-    $stmt->execute([$sku]);
-    $item = $stmt->fetch();
-    if(!$item) return false;
-    $quantity = min($item['stock'], $quantity);
-    update_stock($pdo, $item['id'], -$quantity);
-    record_operation($pdo, $item['id'], 'decommission', $quantity, null, null, null, $user, $reason);
-    if($item['stock'] - $quantity <= 0) {
-        $pdo->prepare('UPDATE items SET active=0 WHERE id=?')->execute([$item['id']]);
-    }
-    return true;
+function decommission_item(PDO $pdo, $sku, $quantity, $reason, $user='system'): bool
+{
+    // V2: la baixa es gestiona per unitats (item_units + moviments).
+    return false;
 }
 
-function items_inactive($pdo){
-    $stmt = $pdo->query('SELECT * FROM items WHERE active=0 ORDER BY name');
-    return $stmt->fetchAll();
+function items_inactive(PDO $pdo): array
+{
+    // Només canvia l'ORDER BY: abans per name (ja no existeix), ara per sku.
+    $stmt = $pdo->query('SELECT * FROM items WHERE active = 0 ORDER BY sku');
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function decommission_stats_by_category($pdo){
-    $sql = 'SELECT IFNULL(i.category, "(sense categoria)") as category, COUNT(o.id) as num_baixes, SUM(o.quantity) as total_unitats
-            FROM operations o JOIN items i ON i.id=o.item_id
-            WHERE o.type="decommission" GROUP BY i.category ORDER BY num_baixes DESC';
-    return $pdo->query($sql)->fetchAll();
+function decommission_stats_by_category(PDO $pdo): array
+{
+    // V2: la taula operations ja no existeix. Aquesta funció queda sense ús.
+    return [];
 }

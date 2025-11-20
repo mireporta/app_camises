@@ -59,6 +59,17 @@ foreach ($stmtUnits->fetchAll(PDO::FETCH_ASSOC) as $u) {
 ob_start();
 ?>
 <h2 class="text-3xl font-bold mb-6">Inventari</h2>
+<?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+if (!empty($_SESSION['import_message'])): ?>
+  <div class="mb-4 p-3 bg-blue-100 border border-blue-300 text-blue-800 rounded text-sm">
+    <?= $_SESSION['import_message'] ?>
+  </div>
+  <?php unset($_SESSION['import_message']); ?>
+<?php endif; ?>
+
 
 <!-- Missatge d’èxit -->
 <?php if (isset($_GET['msg']) && $_GET['msg'] === 'unit_updated'): ?>
@@ -430,9 +441,11 @@ if (importForm && importFile && importPwd) {
     if (!pwd) {
       // Cancel·lat → esborrem el fitxer perquè no s'enviï res
       this.value = '';
+      importPwd.value = '';
       return;
     }
 
+    // ❗No validem aquí: només l'enviem al servidor
     importPwd.value = pwd;
     importForm.submit();
   });
