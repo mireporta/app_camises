@@ -4,6 +4,13 @@ require_once("layout.php");
 
 $message = "";
 
+// 🔹 Carregar totes les posicions definides al magatzem
+$allPositions = $pdo->query("
+    SELECT codi 
+    FROM magatzem_posicions 
+    ORDER BY codi ASC
+")->fetchAll(PDO::FETCH_COLUMN);
+
 /* 🧾 1️⃣ Registrar entrada manual (compra o proveïdor) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manual') {
     $sku         = trim($_POST['sku'] ?? '');
@@ -15,6 +22,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manua
     $categoria   = trim($_POST['categoria'] ?? '');
     $vida_total  = (int)($_POST['vida_total'] ?? 0);
 
+    // ✅ Primer validem SKU i Serial + sububicació
+    if (!$sku || !$serial) {
+        $message = "⚠️ Cal omplir SKU i Serial.";
+    }
+
+    if ($sububicacio !== '') {
+        // 1) Ha d'existir a magatzem_posicions
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
+        $stmt->execute([$sububicacio]);
+        if ($stmt->fetchColumn() == 0) {
+            $message = "❌ La posició '$sububicacio' no existeix al magatzem.";
+        } else {
+            // 2) No la pot estar usant cap altra unitat
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM item_units WHERE sububicacio = ?");
+            $stmt->execute([$sububicacio]);
+            if ($stmt->fetchColumn() > 0) {
+                $message = "❌ La posició '$sububicacio' ja està ocupada per un altre recanvi.";
+            }
+        }
+    }
+    
     if ($sku && $serial) {
         // busquem si ja existeix l'item
         $stmt = $pdo->prepare("SELECT id FROM items WHERE sku = ?");
@@ -179,21 +207,39 @@ ob_start();
       </div>
       <div>
         <label class="block mb-1 font-medium">Codi sèrie (Serial)</label>
-        <input type="text" name="serial" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: ENRE001.1">
+        <input type="text" name="serial" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: ENRE001.01">
       </div>
       <div>
         <label class="block mb-1 font-medium">Categoria</label>
-        <input type="text" name="categoria" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: ENROSCAT / PREMSA / MOTOR">
+        <input type="text" name="categoria" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: A4 / A5 / A4+">
       </div>
       <div>
         <label class="block mb-1 font-medium">Vida útil total (hores o cicles)</label>
         <input type="number" name="vida_total" min="1" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: 200">
       </div>
-      <div>
-        <label class="block mb-1 font-medium">Estanteria (opcional)</label>
-        <input type="text" name="estanteria" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: E2 o Caixa5">
-        <p class="text-xs text-gray-400 mt-1">Es guardarà com a ubicació fixa del magatzem.</p>
+            <div>
+        <label class="block mb-1 font-medium">Posició magatzem (opcional)</label>
+        <input
+          type="text"
+          name="sububicacio"
+          id="edit-unit-sububicacio"
+          list="llista-sububicacions"
+          class="w-full p-2 border rounded focus:ring focus:ring-blue-200"
+          placeholder="Ex: 01A01 (o buit per posició neutra)"
+        >
+        <p class="text-xs text-gray-400 mt-1">
+          Tria una posició existent del magatzem. No es podrà repetir.
+          Pots deixar-ho buit si la unitat no té posició fixa (zona neutra).
+        </p>
+
+        <!-- 🔽 Llista de posicions definides -->
+        <datalist id="llista-sububicacions">
+          <?php foreach ($allPositions as $pos): ?>
+            <option value="<?= htmlspecialchars($pos) ?>"></option>
+          <?php endforeach; ?>
+        </datalist>
       </div>
+
       <div>
         <label class="block mb-1 font-medium">Origen</label>
         <select name="origen" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200">

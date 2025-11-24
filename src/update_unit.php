@@ -4,14 +4,41 @@ require_once __DIR__ . '/config.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = (int)($_POST['id'] ?? 0);
     $action = $_POST['action'] ?? '';
-    $sububicacio = trim($_POST['sububicacio'] ?? '');
-    $vida_total = isset($_POST['vida_total']) ? (int)$_POST['vida_total'] : null;
+
+    // Raw per saber si el camp ha vingut al POST
+    $sububicacio_raw = $_POST['sububicacio'] ?? null;
+    // Versió "neteja" (si ve, el fem trim; si no ve, queda null)
+    $sububicacio = $sububicacio_raw !== null ? trim($sububicacio_raw) : null;
+
+    $vida_total = isset($_POST['vida_total']) && $_POST['vida_total'] !== ''
+        ? (int)$_POST['vida_total']
+        : null;
 
     /* ♻️ Restaurar una unitat donada de baixa */
     if ($action === 'restaurar_unitat') {
         $nova_sububicacio = trim($_POST['sububicacio'] ?? '');
         if ($nova_sububicacio === '') {
             echo "❌ Error: Cal indicar una sububicació per restaurar la unitat.";
+            exit;
+        }
+
+        // ✅ Validar que la posició existeix
+        $stmtPos = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
+        $stmtPos->execute([$nova_sububicacio]);
+        if ($stmtPos->fetchColumn() == 0) {
+            echo "❌ Error: La posició '$nova_sububicacio' no existeix al magatzem.";
+            exit;
+        }
+
+        // ✅ Validar que no està ocupada per una altra unitat
+        $stmtOcc = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM item_units 
+            WHERE sububicacio = ? AND id <> ?
+        ");
+        $stmtOcc->execute([$nova_sububicacio, $id]);
+        if ($stmtOcc->fetchColumn() > 0) {
+            echo "❌ Error: La posició '$nova_sububicacio' ja està ocupada.";
             exit;
         }
 
@@ -101,9 +128,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     updated_at = NOW()
                 WHERE id = :id
             ")->execute([
-                ':motiu' => $motiu,
+                ':motiu'         => $motiu,
                 ':maquina_baixa' => $unit['maquina_actual'],
-                ':id' => $id
+                ':id'            => $id
             ]);
         }
 
@@ -115,10 +142,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $fields = [];
     $params = [];
 
-    if ($sububicacio !== '') {
-        $fields[] = "sububicacio = ?";
-        $params[] = $sububicacio;
+    /**
+     * 🔁 Gestió de la sububicació:
+     * - Si NO ve el camp al POST → no toquem res.
+     * - Si ve buit "" → deixem posició NEUTRA (sububicacio = NULL).
+     * - Si ve amb valor → validem contra magatzem_posicions i que no estigui ocupada.
+     */
+    if ($sububicacio_raw !== null) {
+        if ($sububicacio === '') {
+            // Posició neutra
+            $fields[] = "sububicacio = NULL";
+        } else {
+            // 1) Existeix al magatzem
+            $stmtPos = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
+            $stmtPos->execute([$sububicacio]);
+            if ($stmtPos->fetchColumn() == 0) {
+                echo "❌ Error: La posició '$sububicacio' no existeix al magatzem.";
+                exit;
+            }
+
+            // 2) No està ocupada per una altra unitat
+            $stmtOcc = $pdo->prepare("
+                SELECT COUNT(*) 
+                FROM item_units 
+                WHERE sububicacio = ? AND id <> ?
+            ");
+            $stmtOcc->execute([$sububicacio, $id]);
+            if ($stmtOcc->fetchColumn() > 0) {
+                echo "❌ Error: La posició '$sububicacio' ja està ocupada.";
+                exit;
+            }
+
+            $fields[] = "sububicacio = ?";
+            $params[] = $sububicacio;
+        }
     }
+
     if ($vida_total !== null) {
         $fields[] = "vida_total = ?";
         $params[] = $vida_total;

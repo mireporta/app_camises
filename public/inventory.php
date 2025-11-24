@@ -2,6 +2,13 @@
 require_once("../src/config.php");
 require_once("layout.php");
 
+// 🔹 Carregar totes les posicions definides al magatzem
+$allPositions = $pdo->query("
+    SELECT codi 
+    FROM magatzem_posicions 
+    ORDER BY codi ASC
+")->fetchAll(PDO::FETCH_COLUMN);
+
 /**
  * INVENTARI — Basat en `item_units`
  * - L’estoc total i per ubicació surt de item_units (estat='actiu')
@@ -291,8 +298,18 @@ if (!empty($_SESSION['import_message'])): ?>
       </div>
 
       <div class="mb-4">
-        <label class="block mb-1 font-medium">Estanteria / Sububicació</label>
-        <input type="text" name="sububicacio" id="edit-unit-sububicacio" class="w-full p-2 border rounded" placeholder="Ex: E2 o Caixa5">
+        <label class="block mb-1 font-medium">Posició magatzem</label>
+        <input
+          type="text"
+          name="sububicacio"
+          id="edit-unit-sububicacio"
+          class="w-full p-2 border rounded"
+          list="llista-sububicacions"
+          placeholder="Ex: 01A01"
+        >
+        <p class="text-xs text-gray-500 mt-1">
+          Tria una posició existent del magatzem. Cada posició només pot tenir una unitat.
+        </p>
       </div>
 
       <div class="mb-4">
@@ -340,6 +357,11 @@ if (!empty($_SESSION['import_message'])): ?>
   </div>
 </div>
 
+<datalist id="llista-sububicacions">
+  <?php foreach ($allPositions as $pos): ?>
+    <option value="<?= htmlspecialchars($pos) ?>"></option>
+  <?php endforeach; ?>
+</datalist>
 
 
 <script>
