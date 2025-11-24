@@ -23,6 +23,23 @@ $machine_items = (int)$pdo->query("
   SELECT COUNT(*) FROM item_units WHERE estat='actiu' AND ubicacio='maquina'
 ")->fetchColumn();
 
+// 🔝 TOP 10 MÉS UTILITZATS (per vida_utilitzada, últim any)
+$topRows = $pdo->query("
+  SELECT 
+    i.sku,
+    SUM(iu.vida_utilitzada) AS total_vida
+  FROM item_units iu
+  JOIN items i ON i.id = iu.item_id
+  WHERE iu.vida_utilitzada > 0
+    AND iu.updated_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+  GROUP BY iu.item_id, i.sku
+  ORDER BY total_vida DESC
+  LIMIT 10
+")->fetchAll(PDO::FETCH_ASSOC);
+
+$topLabels = array_column($topRows, 'sku');
+$topValues = array_map('intval', array_column($topRows, 'total_vida'));
+
 // Vida útil <10%
 $stmt = $pdo->query("
   SELECT iu.id, i.sku, iu.vida_utilitzada, iu.vida_total
@@ -59,24 +76,6 @@ $items_low_stock = $pdo->query("
   WHERE COALESCE(t.total_cnt, 0) < i.min_stock
   ORDER BY COALESCE(t.total_cnt, 0)
 ")->fetchAll(PDO::FETCH_ASSOC);
-
-// 🏆 TOP 10 més utilitzats per vida_utilitzada (ANY EN CURS, actius + baixa)
-$topStmt = $pdo->prepare("
-  SELECT 
-    i.sku,
-    COALESCE(SUM(iu.vida_utilitzada), 0) AS total_vida
-  FROM item_units iu
-  JOIN items i ON i.id = iu.item_id
-  WHERE YEAR(iu.updated_at) = YEAR(CURDATE())
-  GROUP BY i.id, i.sku
-  HAVING total_vida > 0
-  ORDER BY total_vida DESC
-  LIMIT 10
-");
-$topStmt->execute();
-$topUsage  = $topStmt->fetchAll(PDO::FETCH_ASSOC);
-$topLabels = array_column($topUsage, 'sku');
-$topValues = array_map('intval', array_column($topUsage, 'total_vida'));
 
 // Peticions pendents
 $peticionsPendents = $pdo
@@ -124,17 +123,10 @@ ob_start();
     </ul>
   </div>
 
-  <!-- Top més utilitzats (any en curs) -->
+  <!-- Top més utilitzats -->
   <div class="card col-span-1">
-    <h3 class="font-semibold text-blue-700 mb-3">
-      🏆 Top 10 recanvis amb més vida utilitzada (any en curs)
-    </h3>
+    <h3 class="font-semibold text-blue-700 mb-3">🏆 Top 10 més utilitzats (últim any)</h3>
     <canvas id="topChart"></canvas>
-    <?php if (empty($topLabels)): ?>
-      <p class="mt-3 text-xs text-gray-400 italic">
-        Encara no hi ha dades de vida utilitzada per aquest any.
-      </p>
-    <?php endif; ?>
   </div>
 
   <!-- Vida útil <10% -->
@@ -201,7 +193,7 @@ ob_start();
                 <td class="px-4 py-2"><?= htmlspecialchars($p['sku']) ?></td>
                 <td class="px-4 py-2"><?= date('d/m/Y H:i', strtotime($p['created_at'])) ?></td>
                 <td class="px-4 py-2 text-center flex justify-center gap-2">
-                  <button type="button" class="serveix-btn bg-green-500 hover:bg-green-600 text-white p-1.5 rounded-full" data-id="<?= $p['id'] ?>" title="Servir">
+                  <button type="button" class="serveix-btn bg-green-500 hover:bg-green-600 text-white p-1.5 rounded-full" data-id="<?= $p['id'] ?>" data-sku="<?= htmlspecialchars($p['sku']) ?>" title="Servir">
                     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                     </svg>
@@ -223,84 +215,84 @@ ob_start();
   </div>
 </div>
 
-<!-- JS del sidebar + gràfic TOP10 -->
+<!-- JS -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+  // 👉 Sidebar peticions (això ho tenies igual)
   const sidebar = document.getElementById('peticionsSidebar');
   const toggleBtn = document.getElementById('toggleSidebarBtn');
   const closeBtn = document.getElementById('closeSidebarBtn');
   const filtre = document.getElementById('filtreMaquina');
   let isSidebarOpen = false;
 
-  toggleBtn.addEventListener('click', () => {
-    isSidebarOpen = !isSidebarOpen;
-    sidebar.classList.toggle('translate-x-full', !isSidebarOpen);
-  });
-  closeBtn.addEventListener('click', () => {
-    isSidebarOpen = false;
-    sidebar.classList.add('translate-x-full');
-  });
-  filtre.addEventListener('change', (e) => {
-    const val = e.target.value;
-    document.querySelectorAll('#taulaPeticions tbody tr').forEach(tr => {
-      tr.style.display = (val === '' || tr.dataset.maquina === val) ? '' : 'none';
-    });
-  });
-
-  // 🏆 Gràfic TOP 10 recanvis per vida utilitzada (any en curs)
-  const topLabels = <?= json_encode($topLabels) ?>;
-  const topValues = <?= json_encode($topValues) ?>;
-
-  if (topLabels.length > 0) {
-    const ctxTop = document.getElementById('topChart').getContext('2d');
-    new Chart(ctxTop, {
-      type: 'bar',
-      data: {
-        labels: topLabels,
-        datasets: [{
-          label: 'Vida utilitzada (any en curs)',
-          data: topValues,
-          borderWidth: 1
-        }]
-      },
-      options: {
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return ' Vida utilitzada (any en curs): ' + context.parsed.y;
-              }
-            }
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            title: {
-              display: true,
-              text: 'Vida utilitzada (unitats, any en curs)'
-            }
-          },
-          x: {
-            ticks: {
-              autoSkip: false,
-              maxRotation: 60,
-              minRotation: 30
-            }
-          }
-        }
-      }
+  if (toggleBtn && sidebar) {
+    toggleBtn.addEventListener('click', () => {
+      isSidebarOpen = !isSidebarOpen;
+      sidebar.classList.toggle('translate-x-full', !isSidebarOpen);
     });
   }
+  if (closeBtn && sidebar) {
+    closeBtn.addEventListener('click', () => {
+      isSidebarOpen = false;
+      sidebar.classList.add('translate-x-full');
+    });
+  }
+  if (filtre) {
+    filtre.addEventListener('change', (e) => {
+      const val = e.target.value;
+      document.querySelectorAll('#taulaPeticions tbody tr').forEach(tr => {
+        tr.style.display = (val === '' || tr.dataset.maquina === val) ? '' : 'none';
+      });
+    });
+  }
+
+
+  // 🏆 Top 10 més utilitzats (Chart.js)
+  const ctx = document.getElementById('topChart');
+  if (ctx && window.Chart) {
+    const labels = <?= json_encode($topLabels, JSON_UNESCAPED_UNICODE) ?>;
+    const values = <?= json_encode($topValues, JSON_UNESCAPED_UNICODE) ?>;
+
+    if (labels.length > 0) {
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Vida utilitzada (últim any)',
+            data: values,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: { ticks: { autoSkip: false, maxRotation: 60, minRotation: 30 } },
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+  }
+  
 });
+
+</script>
+<script>
+  // 🔄 Recarrega tota la pàgina cada 20 segons
+  setInterval(function () {
+    window.location.reload();
+  }, 20000);
 </script>
 
 <?php
 $content = ob_get_clean();
-// Si vols, pots deixar $extraScripts buit perquè ja fem el gràfic aquí
-$extraScripts = '';
+// Mantenim el JS de peticions / modals al fitxer extern
+$extraScripts = '<script src="js/dashboard.js"></script>';
 require_once("layout.php");
 renderPage("Dashboard", $content, $extraScripts);
 ?>
