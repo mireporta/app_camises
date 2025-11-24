@@ -9,13 +9,17 @@ $allPositions = $pdo->query("
     ORDER BY codi ASC
 ")->fetchAll(PDO::FETCH_COLUMN);
 
+// 🔎 Filtre per SKU
+$skuFilter = trim($_GET['sku'] ?? '');
+
 /**
  * INVENTARI — Basat en `item_units`
  * - L’estoc total i per ubicació surt de item_units (estat='actiu')
  * - La vida útil i la localització ara són per unitat
  */
 
-$stmt = $pdo->query("
+// 🔹 Consulta d'items amb filtre opcional per SKU
+$sqlItems = "
   SELECT 
     i.id,
     i.sku,
@@ -46,8 +50,19 @@ $stmt = $pdo->query("
   ) m ON m.item_id = i.id
   WHERE i.active = 1
   AND COALESCE(t.total_cnt, 0) > 0   -- 🔹 només items amb almenys 1 unitat activa
-  ORDER BY i.sku ASC
-");
+";
+
+// Afegim el filtre SKU si cal
+$params = [];
+if ($skuFilter !== '') {
+    $sqlItems .= " AND i.sku LIKE ?";
+    $params[] = "%{$skuFilter}%";
+}
+
+$sqlItems .= " ORDER BY i.sku ASC";
+
+$stmt = $pdo->prepare($sqlItems);
+$stmt->execute($params);
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /** Unitats per ítem */
@@ -93,17 +108,39 @@ if (!empty($_SESSION['import_message'])): ?>
       📤 <span>Exportar Excel</span>
     </a>
 
-      <form id="import-form" action="../src/import_inventory.php" method="POST" enctype="multipart/form-data" class="flex items-center gap-2">
-        <!-- aquí guardarem la contrasenya abans d’enviar -->
-        <input type="hidden" name="import_password" id="import-password">
+    <form id="import-form" action="../src/import_inventory.php" method="POST" enctype="multipart/form-data" class="flex items-center gap-2">
+      <!-- aquí guardarem la contrasenya abans d’enviar -->
+      <input type="hidden" name="import_password" id="import-password">
 
-        <label class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer flex items-center gap-2">
-          📥 <span>Importar Excel</span>
-          <input type="file" name="excel_file" id="import-file" accept=".xlsx" class="hidden">
-        </label>
-      </form>
+      <label class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer flex items-center gap-2">
+        📥 <span>Importar Excel</span>
+        <input type="file" name="excel_file" id="import-file" accept=".xlsx" class="hidden">
+      </label>
+    </form>
   </div>
 </div>
+
+<!-- 🔎 Filtre per SKU -->
+<form method="GET" class="mb-4 flex flex-wrap items-end gap-3">
+  <div class="flex-1 min-w-[220px]">
+    <label class="block text-sm font-medium text-gray-600 mb-1">Cercar per SKU</label>
+    <input 
+        type="text" 
+        name="sku" 
+        value="<?= htmlspecialchars($skuFilter) ?>" 
+        class="p-2 border rounded w-full"
+        placeholder="Ex: ENRE001"
+    >
+  </div>
+  <div class="flex items-center gap-2 mb-1">
+    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">
+      Filtrar
+    </button>
+    <a href="inventory.php" class="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 text-sm">
+      Netejar
+    </a>
+  </div>
+</form>
 
 <!-- 📦 Taula principal -->
 <div class="bg-white rounded-xl shadow p-4 overflow-x-auto">
@@ -136,7 +173,7 @@ if (!empty($_SESSION['import_message'])): ?>
         <td class="px-4 py-2 text-center"><?= (int)$item['min_stock'] ?></td>
         <td class="px-4 py-2 text-center">
           <?php if (!empty($item['plan_file'])): ?>
-            <a href="uploads/<?= htmlspecialchars($item['plan_file']) ?>" target="_blank" class="text-blue-600 hover:underline">📎 Obrir</a>
+            <a href="uploads<?= '/' . htmlspecialchars($item['plan_file']) ?>" target="_blank" class="text-blue-600 hover:underline">📎 Obrir</a>
           <?php else: ?>
             <span class="text-gray-400">—</span>
           <?php endif; ?>
@@ -174,65 +211,63 @@ if (!empty($_SESSION['import_message'])): ?>
                 <th class="px-3 py-1 text-center">Cicles màquina</th>
                 <th class="px-3 py-1 text-center">Vida útil</th>
                 <th class="px-3 py-1 text-right">Accions</th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($unitsByItem[$item['id']] as $u): 
-                  $lifeTotal = (int)($u['vida_total'] ?? 0);
-                  $vidaUsada = (int)($u['vida_utilitzada'] ?? 0);
-                  $vidaPercent = $lifeTotal > 0 ? max(0, 100 - floor(100 * $vidaUsada / $lifeTotal)) : null;
-                ?>
-                <tr class="border-t border-gray-100">
-                  <td class="px-3 py-1 font-mono"><?= htmlspecialchars($u['serial']) ?></td>
-                  <td class="px-3 py-1 capitalize">
-                    <?= $u['ubicacio'] === 'maquina' && $u['maquina_actual'] 
-                          ? 'Màquina ' . htmlspecialchars($u['maquina_actual']) 
-                          : ucfirst(htmlspecialchars($u['ubicacio'])) ?>
-                  </td>
-                  <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['sububicacio'] ?? '—') ?></td>
-                  <td class="px-3 py-1 text-center"><?= (int)$u['cicles_maquina'] ?></td>
-                  <td class="px-3 py-2 text-center">
-                    <?php if ($vidaPercent !== null): ?>
-                      <div class="flex flex-col items-center space-y-1">
-                        <div class="flex items-center gap-1 text-xs font-semibold text-gray-700">
-                          <span><?= $vidaPercent ?>%</span>
-                        </div>
-                        <div class="w-28 bg-gray-200 rounded-full h-2 overflow-hidden">
-                          <div class="h-2 rounded-full <?= $vidaPercent <= 10 ? 'bg-red-500' : ($vidaPercent <= 30 ? 'bg-yellow-400' : 'bg-green-500') ?>" style="width: <?= $vidaPercent ?>%;"></div>
-                        </div>
-                        <div class="text-[11px] text-gray-500 mt-0.5">
-                          Usades: <?= $vidaUsada ?> / Teòriques: <?= $lifeTotal ?>
-                        </div>
-                      </div>
-                    <?php else: ?>
-                      <div class="text-[12px] text-gray-600 italic">Sense dades de vida útil</div>
-                    <?php endif; ?>
-                  </td>
-                  <td class="px-3 py-1 text-right flex justify-end gap-2">
-                    <!-- ✏️ Editar -->
-                    <button 
-                      class="text-blue-600 hover:text-blue-800"
-                      onclick='openUnitModal(
-                        <?= (int)$u["id"] ?>, 
-                        <?= json_encode($u["serial"]) ?>, 
-                        <?= json_encode($u["sububicacio"] ?? "") ?>,
-                        <?= json_encode($u["vida_total"] ?? "") ?>
-                      )'
-                    >✏️</button>
+              </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($unitsByItem[$item['id']] as $u): 
+              $lifeTotal = (int)($u['vida_total'] ?? 0);
+              $vidaUsada = (int)($u['vida_utilitzada'] ?? 0);
+              $vidaPercent = $lifeTotal > 0 ? max(0, 100 - floor(100 * $vidaUsada / $lifeTotal)) : null;
+            ?>
+            <tr class="border-t border-gray-100">
+              <td class="px-3 py-1 font-mono"><?= htmlspecialchars($u['serial']) ?></td>
+              <td class="px-3 py-1 capitalize">
+                <?= $u['ubicacio'] === 'maquina' && $u['maquina_actual'] 
+                      ? 'Màquina ' . htmlspecialchars($u['maquina_actual']) 
+                      : ucfirst(htmlspecialchars($u['ubicacio'])) ?>
+              </td>
+              <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['sububicacio'] ?? '—') ?></td>
+              <td class="px-3 py-1 text-center"><?= (int)$u['cicles_maquina'] ?></td>
+              <td class="px-3 py-2 text-center">
+                <?php if ($vidaPercent !== null): ?>
+                  <div class="flex flex-col items-center space-y-1">
+                    <div class="flex items-center gap-1 text-xs font-semibold text-gray-700">
+                      <span><?= $vidaPercent ?>%</span>
+                    </div>
+                    <div class="w-28 bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div class="h-2 rounded-full <?= $vidaPercent <= 10 ? 'bg-red-500' : ($vidaPercent <= 30 ? 'bg-yellow-400' : 'bg-green-500') ?>" style="width: <?= $vidaPercent ?>%;"></div>
+                    </div>
+                    <div class="text-[11px] text-gray-500 mt-0.5">
+                      Usades: <?= $vidaUsada ?> / Teòriques: <?= $lifeTotal ?>
+                    </div>
+                  </div>
+                <?php else: ?>
+                  <div class="text-[12px] text-gray-600 italic">Sense dades de vida útil</div>
+                <?php endif; ?>
+              </td>
+              <td class="px-3 py-1 text-right flex justify-end gap-2">
+                <!-- ✏️ Editar -->
+                <button 
+                  class="text-blue-600 hover:text-blue-800"
+                  onclick='openUnitModal(
+                    <?= (int)$u["id"] ?>, 
+                    <?= json_encode($u["serial"]) ?>, 
+                    <?= json_encode($u["sububicacio"] ?? "") ?>,
+                    <?= json_encode($u["vida_total"] ?? "") ?>
+                  )'
+                >✏️</button>
 
-                   <!-- 🗑️ Donar de baixa unitat -->
-                    <button 
-                      type="button"
-                      class="text-red-600 hover:text-red-800"
-                      onclick='openBaixaModal(<?= (int)$u["id"] ?>, <?= json_encode($u["serial"]) ?>)'
-                    >🗑️</button>
+               <!-- 🗑️ Donar de baixa unitat -->
+                <button 
+                  type="button"
+                  class="text-red-600 hover:text-red-800"
+                  onclick='openBaixaModal(<?= (int)$u["id"] ?>, <?= json_encode($u["serial"]) ?>)'
+                >🗑️</button>
 
-                  </td>
+              </td>
 
-                </tr>
-                <?php endforeach; ?>
-
-             
+            </tr>
+            <?php endforeach; ?>
             </tbody>
           </table>
           <?php else: ?>
@@ -363,7 +398,6 @@ if (!empty($_SESSION['import_message'])): ?>
   <?php endforeach; ?>
 </datalist>
 
-
 <script>
 function openItemModal(id, sku, min_stock, category, plan_file) {
   document.getElementById('edit-item-id').value = id;
@@ -407,8 +441,6 @@ function closeItemModal() {
   modal.classList.add('hidden');
   modal.classList.remove('flex');
 }
-
-
 
 function openUnitModal(id, serial, sububicacio = '', vida_total = '') {
   document.getElementById('edit-unit-id').value = id;
@@ -472,7 +504,6 @@ if (importForm && importFile && importPwd) {
     importForm.submit();
   });
 }
-
 </script>
 
 <?php
