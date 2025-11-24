@@ -5,7 +5,7 @@ if (!$pdo) {
     die("❌ Error: la connexió \$pdo no s'ha creat correctament.");
 }
 
-// ---------- CONSULTES ----------
+// ---------- CONSULTES KPI ----------
 $total_stock = (int)$pdo->query("SELECT COUNT(*) FROM item_units WHERE estat='actiu'")->fetchColumn();
 $total_items = (int)$pdo->query("SELECT COUNT(*) FROM items WHERE active=1")->fetchColumn();
 $low_stock = (int)$pdo->query("
@@ -60,6 +60,24 @@ $items_low_stock = $pdo->query("
   ORDER BY COALESCE(t.total_cnt, 0)
 ")->fetchAll(PDO::FETCH_ASSOC);
 
+// 🏆 TOP 10 més utilitzats per vida_utilitzada (ANY EN CURS, actius + baixa)
+$topStmt = $pdo->prepare("
+  SELECT 
+    i.sku,
+    COALESCE(SUM(iu.vida_utilitzada), 0) AS total_vida
+  FROM item_units iu
+  JOIN items i ON i.id = iu.item_id
+  WHERE YEAR(iu.updated_at) = YEAR(CURDATE())
+  GROUP BY i.id, i.sku
+  HAVING total_vida > 0
+  ORDER BY total_vida DESC
+  LIMIT 10
+");
+$topStmt->execute();
+$topUsage  = $topStmt->fetchAll(PDO::FETCH_ASSOC);
+$topLabels = array_column($topUsage, 'sku');
+$topValues = array_map('intval', array_column($topUsage, 'total_vida'));
+
 // Peticions pendents
 $peticionsPendents = $pdo
   ->query("SELECT * FROM peticions WHERE estat='pendent' ORDER BY created_at ASC")
@@ -106,10 +124,17 @@ ob_start();
     </ul>
   </div>
 
-  <!-- Top més utilitzats -->
+  <!-- Top més utilitzats (any en curs) -->
   <div class="card col-span-1">
-    <h3 class="font-semibold text-blue-700 mb-3">🏆 Top 10 més utilitzats</h3>
+    <h3 class="font-semibold text-blue-700 mb-3">
+      🏆 Top 10 recanvis amb més vida utilitzada (any en curs)
+    </h3>
     <canvas id="topChart"></canvas>
+    <?php if (empty($topLabels)): ?>
+      <p class="mt-3 text-xs text-gray-400 italic">
+        Encara no hi ha dades de vida utilitzada per aquest any.
+      </p>
+    <?php endif; ?>
   </div>
 
   <!-- Vida útil <10% -->
@@ -198,7 +223,7 @@ ob_start();
   </div>
 </div>
 
-<!-- JS del sidebar -->
+<!-- JS del sidebar + gràfic TOP10 -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -207,6 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const closeBtn = document.getElementById('closeSidebarBtn');
   const filtre = document.getElementById('filtreMaquina');
   let isSidebarOpen = false;
+
   toggleBtn.addEventListener('click', () => {
     isSidebarOpen = !isSidebarOpen;
     sidebar.classList.toggle('translate-x-full', !isSidebarOpen);
@@ -221,12 +247,60 @@ document.addEventListener('DOMContentLoaded', () => {
       tr.style.display = (val === '' || tr.dataset.maquina === val) ? '' : 'none';
     });
   });
+
+  // 🏆 Gràfic TOP 10 recanvis per vida utilitzada (any en curs)
+  const topLabels = <?= json_encode($topLabels) ?>;
+  const topValues = <?= json_encode($topValues) ?>;
+
+  if (topLabels.length > 0) {
+    const ctxTop = document.getElementById('topChart').getContext('2d');
+    new Chart(ctxTop, {
+      type: 'bar',
+      data: {
+        labels: topLabels,
+        datasets: [{
+          label: 'Vida utilitzada (any en curs)',
+          data: topValues,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return ' Vida utilitzada (any en curs): ' + context.parsed.y;
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Vida utilitzada (unitats, any en curs)'
+            }
+          },
+          x: {
+            ticks: {
+              autoSkip: false,
+              maxRotation: 60,
+              minRotation: 30
+            }
+          }
+        }
+      }
+    });
+  }
 });
 </script>
 
 <?php
 $content = ob_get_clean();
-$extraScripts = '<script src="js/dashboard.js"></script>';
+// Si vols, pots deixar $extraScripts buit perquè ja fem el gràfic aquí
+$extraScripts = '';
 require_once("layout.php");
 renderPage("Dashboard", $content, $extraScripts);
 ?>
