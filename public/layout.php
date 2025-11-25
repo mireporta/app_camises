@@ -1,7 +1,10 @@
 <?php
-function renderPage(string $title, string $content, string $extraScripts = '')
+function renderPage(string $title, string $content, string $extraScripts = '', array $options = [])
 {
   global $pdo;
+
+  // Opcions
+  $noSidebar = $options['noSidebar'] ?? false;
 
   // Comptar recanvis pendents del magatzem intermig
   $pendingIntermig = 0;
@@ -55,6 +58,7 @@ function renderPage(string $title, string $content, string $extraScripts = '')
 
 <body class="min-h-screen flex bg-gray-50 text-gray-800">
 
+  <?php if (!$noSidebar): ?>
   <!-- Sidebar -->
   <aside class="w-60 bg-white shadow-lg border-r border-gray-200 flex flex-col">
     <!-- Logo -->
@@ -69,8 +73,8 @@ function renderPage(string $title, string $content, string $extraScripts = '')
     <!-- Navegació -->
     <nav class="flex-1 px-2.5 py-5 space-y-0.5 text-[15px]">
       <a href="dashboard.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'dashboard.php' ? 'active' : '' ?>">📊 Indicadors</a>
-      <a href="maquines.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'maquines.php' ? 'active' : '' ?>">🛠️ Màquines</a>
-      <a href="inventory.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'inventory.php' ? 'active' : '' ?>">📦 Inventari</a>
+      <a href="maquines.php"  class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'maquines.php'  ? 'active' : '' ?>">🛠️ Màquines</a>
+      <a href="inventory.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'inventory.php'? 'active' : '' ?>">📦 Inventari</a>
 
       <a href="entry.php" 
          class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-blue-50 transition 
@@ -82,9 +86,10 @@ function renderPage(string $title, string $content, string $extraScripts = '')
           </span>
         <?php endif; ?>
       </a>
-            <a href="moviments.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'moviments.php' ? 'active' : '' ?>">📜 Moviments</a>      
-      <a href="decommission.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php' ? 'active' : '' ?>">🗑️ Baixes</a>
-      <a href="operari.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'operari.php' ? 'active' : '' ?>">⚙️ Operari</a>
+
+      <a href="moviments.php"   class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'moviments.php'   ? 'active' : '' ?>">📜 Moviments</a>
+      <a href="decommission.php"class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php'? 'active' : '' ?>">🗑️ Baixes</a>
+      <a href="operari.php"     class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'operari.php'    ? 'active' : '' ?>">⚙️ Operari</a>
     </nav>
 
     <!-- Peu -->
@@ -92,9 +97,10 @@ function renderPage(string $title, string $content, string $extraScripts = '')
       &copy; <?= date('Y') ?> Inventari Camises
     </div>
   </aside>
+  <?php endif; ?>
 
   <!-- Contingut principal -->
-  <main class="flex-1 p-8 overflow-x-hidden">
+  <main class="flex-1 p-4 sm:p-8 overflow-x-hidden">
     <?= $content ?>
   </main>
 

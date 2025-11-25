@@ -15,27 +15,27 @@ $allPositions = $pdo->query("
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manual') {
     $sku         = trim($_POST['sku'] ?? '');
     $serial      = trim($_POST['serial'] ?? '');
-    $estanteria  = trim($_POST['estanteria'] ?? '');
+    $sububicacio = trim($_POST['sububicacio'] ?? '');
     $ubicacio    = 'magatzem';
-    $sububicacio = trim($_POST['estanteria'] ?? '');
     $origen      = trim($_POST['origen'] ?? 'principal');
     $categoria   = trim($_POST['categoria'] ?? '');
     $vida_total  = (int)($_POST['vida_total'] ?? 0);
 
-    // ✅ Primer validem SKU i Serial + sububicació
+    // ✅ Validació bàsica
     if (!$sku || !$serial) {
         $message = "⚠️ Cal omplir SKU i Serial.";
     }
 
-    if ($sububicacio !== '') {
+    // ✅ Validació de posició si s'ha informat
+    if ($message === "" && $sububicacio !== '') {
         // 1) Ha d'existir a magatzem_posicions
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
         $stmt->execute([$sububicacio]);
         if ($stmt->fetchColumn() == 0) {
             $message = "❌ La posició '$sububicacio' no existeix al magatzem.";
         } else {
-            // 2) No la pot estar usant cap altra unitat
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM item_units WHERE sububicacio = ?");
+            // 2) No la pot estar usant cap altra unitat activa
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM item_units WHERE sububicacio = ? AND estat = 'actiu'");
             $stmt->execute([$sububicacio]);
             if ($stmt->fetchColumn() > 0) {
                 $message = "❌ La posició '$sububicacio' ja està ocupada per un altre recanvi.";
@@ -43,14 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manua
         }
     }
     
-    if ($sku && $serial) {
+    if ($message === "" && $sku && $serial) {
         // busquem si ja existeix l'item
         $stmt = $pdo->prepare("SELECT id FROM items WHERE sku = ?");
         $stmt->execute([$sku]);
         $item = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$item) {
-            // ➕ Nou item: ja no hi ha 'name' ni 'stock'
+            // ➕ Nou item
             $pdo->prepare("
                 INSERT INTO items (sku, category, min_stock, active, created_at)
                 VALUES (?, ?, 0, 1, NOW())
@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manua
             $pdo->prepare("
                 INSERT INTO item_units (item_id, serial, ubicacio, sububicacio, estat, vida_utilitzada, vida_total, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 'actiu', 0, ?, NOW(), NOW())
-            ")->execute([$itemId, $serial, 'magatzem', $sububicacio, $vida_total]);
+            ")->execute([$itemId, $serial, 'magatzem', $sububicacio !== '' ? $sububicacio : null, $vida_total]);
 
             // Registrem moviment d'entrada
             $pdo->prepare("
@@ -84,32 +84,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manua
                 WHERE serial = ?
             ")->execute([$itemId, 'magatzem', $origen, $serial]);
 
-            // ❌ Ja no toquem items.stock (no existeix, l'estoc ve de item_units)
             $message = "✅ Entrada registrada correctament ($serial a $ubicacio).";
         }
-    } else {
-        $message = "⚠️ Cal omplir SKU i Serial.";
     }
 }
 
-/* ✅ 2️⃣ Acceptar recanvi del magatzem intermig */
+/* ✅ 2️⃣ Acceptar recanvi del magatzem intermig (amb escaneig) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'acceptar_intermig') {
-    $unitId = (int)($_POST['unit_id'] ?? 0);
+    $unitId  = (int)($_POST['unit_id'] ?? 0);
+    $scanPos = trim($_POST['scan_sububicacio'] ?? '');
 
-    if ($unitId > 0) {
-        $pdo->prepare("
-            UPDATE item_units
-            SET ubicacio = 'magatzem', updated_at = NOW()
-            WHERE id = ?
-        ")->execute([$unitId]);
+    if ($unitId <= 0) {
+        $message = "❌ Falta la unitat a acceptar.";
+    } else {
+        // 1️⃣ Obtenim la unitat i la seva sububicació assignada
+        $stmt = $pdo->prepare("SELECT item_id, sububicacio FROM item_units WHERE id = ?");
+        $stmt->execute([$unitId]);
+        $unit = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        $pdo->prepare("
-            INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
-            SELECT iu.id, iu.item_id, 'entrada', 1, 'magatzem', 'INTERMIG', NOW()
-            FROM item_units iu WHERE iu.id = ?
-        ")->execute([$unitId]);
+        if (!$unit) {
+            $message = "❌ Unitat no trobada.";
+        } else {
+            $expected = trim($unit['sububicacio'] ?? '');
 
-        $message = "✅ Recanvi acceptat al magatzem principal.";
+            // 🔹 CAS 1: NO té sububicació assignada → acceptem sense escaneig
+            if ($expected === '') {
+                $pdo->prepare("
+                    UPDATE item_units
+                    SET ubicacio = 'magatzem', updated_at = NOW()
+                    WHERE id = ?
+                ")->execute([$unitId]);
+
+                $pdo->prepare("
+                    INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+                    VALUES (?, ?, 'entrada', 1, 'magatzem', 'INTERMIG', NOW())
+                ")->execute([$unitId, (int)$unit['item_id']]);
+
+                $message = "✅ Recanvi acceptat al magatzem principal (sense posició definida).";
+
+            // 🔹 CAS 2: Té sububicació assignada → escaneig + posició lliure
+            } else {
+
+                // 2️⃣ Validem escaneig
+                if ($scanPos === '') {
+                    $message = "❌ Cal escanejar la posició del magatzem.";
+                } elseif (strcasecmp($scanPos, $expected) !== 0) {
+                    $message = "❌ La posició escanejada ($scanPos) no coincideix amb la posició assignada ($expected).";
+                } else {
+                    // 3️⃣ Comprovem que no hi ha cap altre recanvi actiu a la mateixa posició
+                    $stmtOcc = $pdo->prepare("
+                        SELECT COUNT(*)
+                        FROM item_units
+                        WHERE sububicacio = ?
+                          AND id <> ?
+                          AND estat = 'actiu'
+                    ");
+                    $stmtOcc->execute([$expected, $unitId]);
+
+                    if ($stmtOcc->fetchColumn() > 0) {
+                        $message = "❌ La posició '$expected' ja està ocupada per un altre recanvi actiu. Revisa l'inventari abans d'acceptar.";
+                    } else {
+                        // 4️⃣ Tot OK → Acceptem al magatzem
+                        $pdo->prepare("
+                            UPDATE item_units
+                            SET ubicacio = 'magatzem', updated_at = NOW()
+                            WHERE id = ?
+                        ")->execute([$unitId]);
+
+                        $pdo->prepare("
+                            INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+                            VALUES (?, ?, 'entrada', 1, 'magatzem', 'INTERMIG', NOW())
+                        ")->execute([$unitId, (int)$unit['item_id']]);
+
+                        $message = "✅ Recanvi acceptat al magatzem principal.";
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -123,7 +174,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'baixa
     $motiuValid = ['malmesa', 'fi_vida_util', 'altres', 'descatalogat'];
     if ($motiu === '' || !in_array($motiu, $motiuValid, true)) {
         $message = "❌ Cal seleccionar un motiu de baixa.";
-        // no fem return per tal que es mostri la pàgina igualment
     } elseif ($unitId > 0) {
 
         // 1️⃣ Obtenir dades actuals
@@ -189,7 +239,13 @@ ob_start();
 <h2 class="text-3xl font-bold mb-6">Entrades d'estoc</h2>
 
 <?php if ($message): ?>
-  <div class="mb-4 p-3 bg-green-100 border border-green-300 text-green-800 rounded">
+  <?php
+    $isError = (strpos($message, "❌") === 0 || strpos($message, "⚠️") === 0);
+    $class = $isError
+      ? 'bg-red-100 border-red-300 text-red-800'
+      : 'bg-green-100 border-green-300 text-green-800';
+  ?>
+  <div class="mb-4 p-3 rounded border <?= $class ?>">
     <?= htmlspecialchars($message) ?>
   </div>
 <?php endif; ?>
@@ -217,14 +273,13 @@ ob_start();
         <label class="block mb-1 font-medium">Vida útil total (hores o cicles)</label>
         <input type="number" name="vida_total" min="1" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: 200">
       </div>
-            <div>
+      <div>
         <label class="block mb-1 font-medium">Posició magatzem (opcional)</label>
         <input
           type="text"
           name="sububicacio"
-          id="edit-unit-sububicacio"
           list="llista-sububicacions"
-          class="w-full p-2 border rounded focus:ring focus:ring-blue-200"
+          class="w-full p-2 border rounded focus:ring focus:ring-blue-200 font-mono"
           placeholder="Ex: 01A01 (o buit per posició neutra)"
         >
         <p class="text-xs text-gray-400 mt-1">
@@ -278,39 +333,33 @@ ob_start();
                 <td class="px-4 py-2"><?= htmlspecialchars($item['serial']) ?></td>
                 <td class="px-4 py-2"><?= htmlspecialchars($item['maquina']) ?></td>
                 <td class="px-4 py-2 text-center flex justify-center gap-2">
-                  <!-- ✅ Acceptar -->
-                  <form method="POST" onsubmit="return confirm('Vols acceptar aquest recanvi al magatzem principal?');">
-                    <input type="hidden" name="action" value="acceptar_intermig">
-                    <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
-                    <button title="Entrar al magatzem"
-                            class="inline-flex items-center justify-center bg-green-500 hover:bg-green-600 
-                                  text-white rounded-full w-8 h-8 shadow transition">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                          stroke-width="3" stroke="white" class="w-5 h-5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
-                    </button>
-                  </form>
+                  <!-- ✅ Acceptar: ara amb data-* i sense onclick -->
+                  <button type="button"
+                          class="btn-acceptar-intermig inline-flex items-center justify-center bg-green-500 hover:bg-green-600 
+                                text-white rounded-full w-8 h-8 shadow transition"
+                          title="Entrar al magatzem"
+                          data-unit-id="<?= (int)$item['unit_id'] ?>"
+                          data-sku="<?= htmlspecialchars($item['sku']) ?>"
+                          data-serial="<?= htmlspecialchars($item['serial']) ?>"
+                          data-sububicacio="<?= htmlspecialchars($item['sububicacio'] ?? '') ?>">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                        stroke-width="3" stroke="white" class="w-5 h-5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  </button>
 
                   <!-- ❌ Donar de baixa -->
-                  <form method="POST"
-                        onsubmit="return confirm('Segur que vols donar de baixa aquest recanvi?');"
-                        class="flex items-center gap-2">
+                  <button type="button"
+                          title="Donar de baixa"
+                          onclick="openBaixaModal(<?= (int)$item['unit_id'] ?>)"
+                          class="inline-flex items-center justify-center bg-red-500 hover:bg-red-600 
+                                text-white rounded-full w-8 h-8 shadow transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                        stroke-width="3" stroke="white" class="w-5 h-5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
 
-                    <input type="hidden" name="action" value="baixa_intermig">
-                    <input type="hidden" name="unit_id" value="<?= $item['unit_id'] ?>">
-                    <button type="button"
-                            title="Donar de baixa"
-                            onclick="openBaixaModal(<?= (int)$item['unit_id'] ?>)"
-                            class="inline-flex items-center justify-center bg-red-500 hover:bg-red-600 
-                                  text-white rounded-full w-8 h-8 shadow transition">
-                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                          stroke-width="3" stroke="white" class="w-5 h-5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-
-                  </form>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -366,6 +415,51 @@ ob_start();
   </div>
 </div>
 
+<!-- ✅ Modal ACCEPTAR INTERMIG amb escaneig de posició -->
+<div id="acceptIntermigModal"
+     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+  <div class="bg-white rounded-xl shadow-lg p-6 w-full max-w-sm">
+    <h3 class="text-lg font-semibold mb-4">Acceptar recanvi al magatzem</h3>
+
+    <p class="text-sm text-gray-700 mb-2">
+      Confirma que deixes el recanvi a la seva posició assignada.
+    </p>
+
+    <div class="text-xs bg-gray-50 border rounded p-2 mb-3 space-y-1">
+      <div><span class="font-semibold">SKU:</span> <span id="accept-sku"></span></div>
+      <div><span class="font-semibold">Serial:</span> <span id="accept-serial"></span></div>
+      <div><span class="font-semibold">Posició assignada:</span> <span id="accept-sububicacio" class="font-mono"></span></div>
+    </div>
+
+    <form method="POST">
+      <input type="hidden" name="action" value="acceptar_intermig">
+      <input type="hidden" name="unit_id" id="accept-unit-id">
+
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        Escaneja el codi de la posició
+      </label>
+      <input type="text"
+             name="scan_sububicacio"
+             id="accept-scan-input"
+             class="w-full border rounded px-2 py-2 text-sm mb-4 font-mono"
+             placeholder="Ex: 01A03"
+             autocomplete="off">
+
+      <div class="flex justify-end gap-2">
+        <button type="button"
+                onclick="closeAcceptModal()"
+                class="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-100">
+          Cancel·lar
+        </button>
+        <button type="submit"
+                class="px-3 py-2 text-sm rounded bg-green-600 text-white hover:bg-green-700">
+          Confirmar
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
   function openBaixaModal(unitId) {
     document.getElementById('baixaIntermigUnitId').value = unitId;
@@ -376,6 +470,36 @@ ob_start();
   function closeBaixaModal() {
     document.getElementById('baixaIntermigModal').classList.add('hidden');
   }
+
+  function openAcceptModal(unitId, sku, serial, sububicacio) {
+    document.getElementById('accept-unit-id').value = unitId;
+    document.getElementById('accept-sku').textContent = sku;
+    document.getElementById('accept-serial').textContent = serial;
+    document.getElementById('accept-sububicacio').textContent = sububicacio || '(sense posició)';
+    const modal = document.getElementById('acceptIntermigModal');
+    modal.classList.remove('hidden');
+
+    const input = document.getElementById('accept-scan-input');
+    input.value = '';
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function closeAcceptModal() {
+    document.getElementById('acceptIntermigModal').classList.add('hidden');
+  }
+
+  // 🔹 ENLLAÇ DELS BOTONS VERDS AMB openAcceptModal (sense onclick en línia)
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.btn-acceptar-intermig').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const unitId      = btn.dataset.unitId;
+        const sku         = btn.dataset.sku;
+        const serial      = btn.dataset.serial;
+        const sububicacio = btn.dataset.sububicacio || '';
+        openAcceptModal(unitId, sku, serial, sububicacio);
+      });
+    });
+  });
 </script>
 
 <?php

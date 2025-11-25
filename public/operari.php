@@ -338,7 +338,14 @@ ob_start();
   });
 </script>
 
+<script>
+  // 🔄 Recarrega tota la pàgina cada 60 segons
+  setInterval(function () {
+    window.location.reload();
+  }, 60000);
+</script>
 
 <?php
 $content = ob_get_clean();
 renderOperariPage("Pantalla Operari", $content);
+?>
