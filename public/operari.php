@@ -1,40 +1,99 @@
 <?php
+session_start();
+
 require_once("../src/config.php");
 require_once("layout_operari.php");
+
+
+// 🔁 Reset de màquina si es demana
+if (isset($_GET['reset_maquina']) && $_GET['reset_maquina'] === '1') {
+    unset($_SESSION['maquina_actual']);
+    header("Location: operari.php");
+    exit;
+}
+
+// 🟢 1) SET / CANVI DE MÀQUINA
+if (!empty($_GET['maquina'])) {
+    // Ve de codi de barres o URL
+    $_SESSION['maquina_actual'] = $_GET['maquina'];
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['maquina_inicial'])) {
+    $maq = trim($_POST['maquina_inicial']);
+    if ($maq !== '') {
+        $_SESSION['maquina_actual'] = $maq;
+    }
+    header("Location: operari.php");
+    exit;
+}
+
+$maquinaActual = $_SESSION['maquina_actual'] ?? null;
+
+// 🔍 Obtenir màquines actives (ho necessitem tant per la pantalla inicial com per la resta)
+$maquines = $pdo->query("SELECT codi FROM maquines WHERE activa = 1 ORDER BY codi")
+                ->fetchAll(PDO::FETCH_ASSOC);
+
+// ⚠️ 2) Si NO tenim màquina seleccionada → pantalla només per triar màquina
+if (!$maquinaActual) {
+    ob_start();
+    ?>
+    <h2 class="text-2xl font-bold mb-4">Selecciona la màquina</h2>
+    <p class="mb-4 text-gray-600 text-sm">
+        Escaneja el codi de barres de la màquina (URL) o tria-la manualment.
+    </p>
+
+    <form method="POST" class="space-y-4 bg-white p-4 rounded shadow max-w-sm">
+      <div>
+        <label class="block text-sm font-medium mb-1">Màquina</label>
+        <select name="maquina_inicial" required class="w-full border p-2 rounded">
+          <option value="">-- Selecciona --</option>
+          <?php foreach ($maquines as $m): ?>
+            <option value="<?= htmlspecialchars($m['codi']) ?>"><?= htmlspecialchars($m['codi']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <button type="submit"
+              class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+        Confirmar màquina
+      </button>
+    </form>
+    <?php
+    $content = ob_get_clean();
+    renderOperariPage("Selecciona màquina", $content);
+    exit;
+}
 
 // 🟢 Missatges de feedback
 $message = "";
 if (isset($_GET['msg'])) {
     $messages = [
-        'peticio_ok' => "✅ Petició enviada correctament!",
-        'vida_ok' => "🧮 Vida actualitzada correctament!",
-        'retorn_ok' => "↩ Camisa retornada al magatzem intermig.",
+        'peticio_ok'   => "✅ Petició enviada correctament!",
+        'vida_ok'      => "🧮 Vida actualitzada correctament!",
+        'retorn_ok'    => "↩ Camisa retornada al magatzem intermig.",
         'sku_invalid'  => "❌ El codi de camisa (SKU) no és vàlid."
     ];
     $message = $messages[$_GET['msg']] ?? '';
 }
 
-/* 📥 1. Fer petició */
+/* 📥 3. Fer petició */
 if (isset($_POST['action']) && $_POST['action'] === 'peticio') {
-    $maquina = $_POST['maquina'] ?? '';
+    $maquina = $maquinaActual; // sempre la de sessió
     $sku     = trim($_POST['sku'] ?? '');
 
-    // Validació bàsica
     if ($maquina === '' || $sku === '') {
         header("Location: operari.php?msg=sku_invalid");
         exit;
     }
 
-    // ✅ Comprovar que el SKU existeix i està actiu
+    // Comprovar que el SKU existeix i està actiu
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM items WHERE sku = ? AND active = 1");
     $stmt->execute([$sku]);
     if ($stmt->fetchColumn() == 0) {
-        // SKU inventat o inactiu → no acceptem la petició
         header("Location: operari.php?msg=sku_invalid");
         exit;
     }
 
-    // Registra petició
     $stmt = $pdo->prepare("INSERT INTO peticions (maquina, sku, estat) VALUES (?, ?, 'pendent')");
     $stmt->execute([$maquina, $sku]);
 
@@ -42,12 +101,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'peticio') {
     exit;
 }
 
-/* 🧮 2. Finalitzar producció (actualitzar vida útil a les unitats) */
+/* 🧮 4. Finalitzar producció */
 if (isset($_POST['action']) && $_POST['action'] === 'finalitzar') {
-    $maquina = $_POST['maquina'];
+    $maquina = $maquinaActual;
     $unitats = (int)$_POST['unitats'];
 
-    // Recuperem totes les unitats assignades a la màquina
     $stmt = $pdo->prepare("
         SELECT iu.id, iu.item_id
         FROM item_units iu
@@ -58,7 +116,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'finalitzar') {
 
     if ($units) {
         foreach ($units as $u) {
-            // Actualitza vida utilitzada de la unitat
             $pdo->prepare("
                 UPDATE item_units
                 SET vida_utilitzada = vida_utilitzada + ?, updated_at = NOW()
@@ -71,16 +128,15 @@ if (isset($_POST['action']) && $_POST['action'] === 'finalitzar') {
     exit;
 }
 
-/* ↩ 3. Retornar recanvis */
+/* ↩ 5. Retornar recanvis */
 if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
-    $maquina = trim($_POST['maquina'] ?? '');
+    $maquina = $maquinaActual;
     $unit_id = (int)($_POST['unit_id'] ?? 0);
 
     if ($unit_id > 0 && $maquina !== '') {
         try {
             $pdo->beginTransaction();
 
-            // 1️⃣ Obtenir item_id associat
             $stmt = $pdo->prepare("SELECT item_id FROM item_units WHERE id = ?");
             $stmt->execute([$unit_id]);
             $item_id = $stmt->fetchColumn();
@@ -89,7 +145,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
                 throw new RuntimeException("Unitat no trobada");
             }
 
-            // 2️⃣ Moure unitat a "intermig"
             $pdo->prepare("
                 UPDATE item_units
                 SET ubicacio = 'intermig',
@@ -97,7 +152,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
                 WHERE id = ?
             ")->execute([$unit_id]);
 
-            // 3️⃣ Registrar moviment
             $pdo->prepare("
                 INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
                 VALUES (?, ?, 'retorn', 1, 'intermig', ?, NOW())
@@ -120,27 +174,17 @@ if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
     }
 }
 
-
-// 🔍 Obtenir màquines actives
-$maquines = $pdo->query("SELECT codi FROM maquines WHERE activa = 1 ORDER BY codi")->fetchAll(PDO::FETCH_ASSOC);
-
-// 🔍 Obtenir unitats muntades actualment a cada màquina
-$unitsPerMaquina = [];
-foreach ($maquines as $m) {
-    $stmt = $pdo->prepare("
-        SELECT iu.id, iu.serial, i.sku
-        FROM item_units iu
-        JOIN items i ON i.id = iu.item_id
-        WHERE iu.maquina_actual = ? AND iu.ubicacio = 'maquina' AND iu.estat = 'actiu'
-        ORDER BY i.sku ASC
-    ");
-    $stmt->execute([$m['codi']]);
-    // 🔍 Obtenir llista de SKU actius per l'autocompletat
-    $skusDisponibles = $pdo->query("SELECT sku FROM items WHERE active = 1 ORDER BY sku ASC")
+// 🔍 SKU per autocompletar
+$skusDisponibles = $pdo->query("SELECT sku FROM items WHERE active = 1 ORDER BY sku ASC")
                        ->fetchAll(PDO::FETCH_COLUMN);
 
-    $unitsPerMaquina[$m['codi']] = $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
+// 🔍 Unitat a màquina (per JS de retorn)
+$unitatsPerMaquina = $pdo->query("
+  SELECT iu.id AS unit_id, iu.serial, i.sku, iu.maquina_actual
+  FROM item_units iu
+  JOIN items i ON i.id = iu.item_id
+  WHERE iu.estat = 'actiu' AND iu.ubicacio = 'maquina'
+")->fetchAll(PDO::FETCH_ASSOC);
 
 ob_start();
 ?>
@@ -151,6 +195,18 @@ ob_start();
   </div>
 <?php endif; ?>
 
+<p class="mb-4 text-sm text-gray-600 flex items-center justify-between">
+  <span>
+    Màquina actual: <span class="font-semibold"><?= htmlspecialchars($maquinaActual) ?></span>
+  </span>
+
+  <a href="operari.php?reset_maquina=1"
+     class="text-blue-600 text-xs underline hover:text-blue-800">
+    Canviar de màquina
+  </a>
+</p>
+
+
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
   <!-- 📥 FER PETICIÓ -->
@@ -158,18 +214,16 @@ ob_start();
     <h3 class="text-lg font-semibold mb-3">📥 Fer petició de camisa</h3>
     <form method="POST" class="space-y-3">
       <input type="hidden" name="action" value="peticio">
+      <input type="hidden" name="maquina" value="<?= htmlspecialchars($maquinaActual) ?>">
 
       <div>
         <label class="block text-sm font-medium">Màquina</label>
-        <select name="maquina" required class="w-full border p-2 rounded">
-          <option value="">-- Selecciona --</option>
-          <?php foreach ($maquines as $m): ?>
-            <option value="<?= htmlspecialchars($m['codi']) ?>"><?= htmlspecialchars($m['codi']) ?></option>
-          <?php endforeach; ?>
-        </select>
+        <div class="w-full border p-2 rounded bg-gray-100 text-gray-700">
+          <?= htmlspecialchars($maquinaActual) ?>
+        </div>
       </div>
 
-     <div>
+      <div>
         <label class="block text-sm font-medium">Codi camisa (SKU)</label>
         <input
           type="text"
@@ -182,7 +236,6 @@ ob_start();
           autofocus
           autocomplete="off"
         >
-
         <datalist id="sku-list">
           <?php foreach ($skusDisponibles as $sku): ?>
             <option value="<?= htmlspecialchars($sku) ?>"></option>
@@ -201,15 +254,13 @@ ob_start();
     <h3 class="text-lg font-semibold mb-3">🧮 Finalitzar producció</h3>
     <form method="POST" class="space-y-3">
       <input type="hidden" name="action" value="finalitzar">
+      <input type="hidden" name="maquina" value="<?= htmlspecialchars($maquinaActual) ?>">
 
       <div>
         <label class="block text-sm font-medium">Màquina</label>
-        <select name="maquina" required class="w-full border p-2 rounded">
-          <option value="">-- Selecciona --</option>
-          <?php foreach ($maquines as $m): ?>
-            <option value="<?= htmlspecialchars($m['codi']) ?>"><?= htmlspecialchars($m['codi']) ?></option>
-          <?php endforeach; ?>
-        </select>
+        <div class="w-full border p-2 rounded bg-gray-100 text-gray-700">
+          <?= htmlspecialchars($maquinaActual) ?>
+        </div>
       </div>
 
       <div>
@@ -224,52 +275,47 @@ ob_start();
   </div>
 
   <!-- ↩ RETORNAR UNITATS -->
-<div class="bg-white p-4 rounded shadow">
-  <h3 class="text-lg font-semibold mb-3">↩ Retornar recanvis de màquina</h3>
-  <form method="POST" class="space-y-3">
-    <input type="hidden" name="action" value="retornar">
+  <div class="bg-white p-4 rounded shadow">
+    <h3 class="text-lg font-semibold mb-3">↩ Retornar recanvis de màquina</h3>
+    <form method="POST" class="space-y-3">
+      <input type="hidden" name="action" value="retornar">
+      <input type="hidden" name="maquina" value="<?= htmlspecialchars($maquinaActual) ?>">
 
-    <!-- Màquina -->
-    <div>
-      <label class="block text-sm font-medium">Màquina</label>
-      <select name="maquina" id="select-maquina-retorn" required class="w-full border p-2 rounded" onchange="updateUnitatsList()">
-        <option value="">-- Selecciona --</option>
-        <?php foreach ($maquines as $m): ?>
-          <option value="<?= htmlspecialchars($m['codi']) ?>"><?= htmlspecialchars($m['codi']) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
+      <div>
+        <label class="block text-sm font-medium">Màquina</label>
+        <select name="maquina_dummy" id="select-maquina-retorn"
+                class="w-full border p-2 rounded bg-gray-100 text-gray-700" disabled>
+          <option value="<?= htmlspecialchars($maquinaActual) ?>">
+            <?= htmlspecialchars($maquinaActual) ?>
+          </option>
+        </select>
+      </div>
 
-    <!-- Unitat / Serial -->
-    <div>
-      <label class="block text-sm font-medium">Unitat (serial)</label>
-      <select name="unit_id" id="select-unit-retorn" required class="w-full border p-2 rounded">
-        <option value="">-- Selecciona màquina primer --</option>
-      </select>
-    </div>
+      <div>
+        <label class="block text-sm font-medium">Unitat (serial)</label>
+        <select name="unit_id" id="select-unit-retorn" required class="w-full border p-2 rounded">
+          <option value="">-- Carregant unitats... --</option>
+        </select>
+      </div>
 
-    <button type="submit" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 w-full">
-      Retornar al magatzem intermig
-    </button>
-  </form>
+      <button type="submit" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 w-full">
+        Retornar al magatzem intermig
+      </button>
+    </form>
+  </div>
+
 </div>
 
 <script>
-  const unitatsPerMaquina = <?= json_encode(
-    $pdo->query("
-      SELECT iu.id AS unit_id, iu.serial, i.sku, iu.maquina_actual
-      FROM item_units iu
-      JOIN items i ON i.id = iu.item_id
-      WHERE iu.estat = 'actiu' AND iu.ubicacio = 'maquina'
-    ")->fetchAll(PDO::FETCH_ASSOC)
-  ) ?>;
+  // Dades de unitats a màquina per al select de retorn
+  const unitatsPerMaquina = <?= json_encode($unitatsPerMaquina) ?>;
+  const maquinaActual = <?= json_encode($maquinaActual) ?>;
 
   function updateUnitatsList() {
-    const maquina = document.getElementById('select-maquina-retorn').value;
     const select = document.getElementById('select-unit-retorn');
     select.innerHTML = '';
 
-    const unitats = unitatsPerMaquina.filter(u => u.maquina_actual === maquina);
+    const unitats = unitatsPerMaquina.filter(u => u.maquina_actual === maquinaActual);
 
     if (unitats.length === 0) {
       select.innerHTML = '<option value="">-- Cap unitat activa a aquesta màquina --</option>';
@@ -283,47 +329,16 @@ ob_start();
       select.appendChild(opt);
     });
   }
-</script>
 
-
-</div>
-
-<script>
-  const recanvisData = <?= json_encode($unitsPerMaquina) ?>;
-
-  function updateRecanvisList() {
-    const maquina = document.getElementById('select-maquina-retorn').value;
-    const select = document.getElementById('select-item-retorn');
-    select.innerHTML = '';
-
-    if (!maquina || !recanvisData[maquina] || recanvisData[maquina].length === 0) {
-      select.innerHTML = '<option value="">-- Cap unitat --</option>';
-      return;
-    }
-
-    recanvisData[maquina].forEach(r => {
-      const opt = document.createElement('option');
-      opt.value = r.id;
-      opt.textContent = r.sku + ' (' + r.serial + ')';
-      select.appendChild(opt);
-    });
-  }
-
-  // Eliminar paràmetre msg després de mostrar
-  if (window.location.search.includes("msg=")) {
-    setTimeout(() => {
-      const cleanURL = window.location.origin + window.location.pathname;
-      window.history.replaceState({}, document.title, cleanURL);
-    }, 1200);
-  }
+  // inicialitzar llista en carregar
+  document.addEventListener('DOMContentLoaded', updateUnitatsList);
 </script>
 
 <script>
-  // Llista de SKU vàlids generada des de PHP
+  // Validació de SKU al formulari de petició
   const validSkus = <?= json_encode($skusDisponibles) ?>;
   const validSkuSet = new Set(validSkus);
 
-  // Trobar el formulari de "Fer petició"
   const peticioForm = document.querySelector('form input[name="action"][value="peticio"]').form;
   const skuInput = document.getElementById('sku-input');
 
@@ -336,10 +351,16 @@ ob_start();
       return false;
     }
   });
-</script>
 
-<script>
-  // 🔄 Recarrega tota la pàgina cada 60 segons
+  // Netejar el ?msg després d'uns segons
+  if (window.location.search.includes("msg=")) {
+    setTimeout(() => {
+      const cleanURL = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, cleanURL);
+    }, 1200);
+  }
+
+  // Auto-refresh cada 60 segons
   setInterval(function () {
     window.location.reload();
   }, 60000);

@@ -341,7 +341,6 @@ ob_start();
         <label class="block mb-1 text-sm font-medium">Codi camisa (SKU)</label>
         <input type="text" name="sku" required
                class="w-full p-2 border rounded text-lg"
-               autofocus
                placeholder="Escaneja o escriu SKU">
       </div>
 

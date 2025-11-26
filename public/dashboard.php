@@ -286,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 🔄 Recarrega tota la pàgina cada 20 segons
   setInterval(function () {
     window.location.reload();
-  }, 20000);
+  }, 60000);
 </script>
 
 <?php
