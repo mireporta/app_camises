@@ -88,6 +88,7 @@ function renderPage(string $title, string $content, string $extraScripts = '', a
       </a>
 
       <a href="moviments.php"   class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'moviments.php'   ? 'active' : '' ?>">📜 Moviments</a>
+      <a href="produccio_historial.php"   class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'produccio_historial.php' ? 'active' : '' ?>">📈 Històric producció</a>
       <a href="decommission.php"class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php'? 'active' : '' ?>">🗑️ Baixes</a>
       <a href="operari.php"     class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'operari.php'    ? 'active' : '' ?>">⚙️ Operari</a>
     </nav>

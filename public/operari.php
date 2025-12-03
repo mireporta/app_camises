@@ -71,7 +71,11 @@ if (isset($_GET['msg'])) {
         'peticio_ok'   => "✅ Petició enviada correctament!",
         'vida_ok'      => "🧮 Vida actualitzada correctament!",
         'retorn_ok'    => "↩ Camisa retornada al magatzem intermig.",
-        'sku_invalid'  => "❌ El codi de camisa (SKU) no és vàlid."
+        'sku_invalid'  => "❌ El codi de camisa (SKU) no és vàlid.",
+        'vida_error'       => "❌ No s'ha pogut registrar la producció.",
+        'edit_ok'          => "✅ Producció corregida correctament.",
+        'edit_tard'        => "⏰ Ja han passat més de 10 minuts, no es pot corregir des d'aquí.",
+        'edit_error'       => "❌ Error en corregir la producció."
     ];
     $message = $messages[$_GET['msg']] ?? '';
 }
@@ -101,32 +105,181 @@ if (isset($_POST['action']) && $_POST['action'] === 'peticio') {
     exit;
 }
 
-/* 🧮 4. Finalitzar producció */
+/* 🧮 4. Finalitzar producció (actualitzar vida útil a les unitats i registrar event) */
 if (isset($_POST['action']) && $_POST['action'] === 'finalitzar') {
-    $maquina = $maquinaActual;
-    $unitats = (int)$_POST['unitats'];
+    $maquina = trim($_POST['maquina'] ?? '');
+    $unitats = (int)($_POST['unitats'] ?? 0);
 
+    if ($maquina === '' || $unitats <= 0) {
+        header("Location: operari.php?msg=vida_error");
+        exit;
+    }
+
+    // Recuperem totes les unitats assignades a la màquina
     $stmt = $pdo->prepare("
         SELECT iu.id, iu.item_id
         FROM item_units iu
-        WHERE iu.maquina_actual = ? AND iu.ubicacio = 'maquina' AND iu.estat = 'actiu'
+        WHERE iu.maquina_actual = ? 
+          AND iu.ubicacio = 'maquina' 
+          AND iu.estat = 'actiu'
     ");
     $stmt->execute([$maquina]);
     $units = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if ($units) {
-        foreach ($units as $u) {
-            $pdo->prepare("
-                UPDATE item_units
-                SET vida_utilitzada = vida_utilitzada + ?, updated_at = NOW()
-                WHERE id = ?
-            ")->execute([$unitats, $u['id']]);
-        }
+    if (!$units) {
+        // No hi ha recanvis muntats → no te sentit registrar producció
+        header("Location: operari.php?msg=vida_error");
+        exit;
     }
 
-    header("Location: operari.php?msg=vida_ok");
-    exit;
+    try {
+        $pdo->beginTransaction();
+
+        // 1️⃣ Crear registre de producció
+        $stmtEvent = $pdo->prepare("
+            INSERT INTO produccio_events (maquina, unitats_originals, created_at)
+            VALUES (?, ?, NOW())
+        ");
+        $stmtEvent->execute([$maquina, $unitats]);
+        $eventId = (int)$pdo->lastInsertId();
+
+        // 2️⃣ Relacionar les unitats amb l'esdeveniment
+        $stmtLink = $pdo->prepare("
+            INSERT INTO produccio_events_units (event_id, item_unit_id)
+            VALUES (?, ?)
+        ");
+
+        // 3️⃣ Actualitzar vida utilitzada de cada unitat
+        $stmtUpdateVida = $pdo->prepare("
+            UPDATE item_units
+            SET vida_utilitzada = vida_utilitzada + ?, 
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+
+        foreach ($units as $u) {
+            // Relació amb l'event
+            $stmtLink->execute([$eventId, $u['id']]);
+            // Vida utilitzada
+            $stmtUpdateVida->execute([$unitats, $u['id']]);
+        }
+
+        $pdo->commit();
+        header("Location: operari.php?msg=vida_ok");
+        exit;
+
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Error finalitzar produccio: " . $e->getMessage());
+        header("Location: operari.php?msg=vida_error");
+        exit;
+    }
 }
+
+/* ✏️ 4b. Corregir una producció recent (modificar unitats i ajustar vida) */
+if (isset($_POST['action']) && $_POST['action'] === 'corregir_produccio') {
+    $eventId   = (int)($_POST['event_id'] ?? 0);
+    $nouValor  = max(0, (int)($_POST['unitats_correctes'] ?? 0));
+
+    if ($eventId <= 0) {
+        header("Location: operari.php?msg=edit_error");
+        exit;
+    }
+
+    try {
+        // 1️⃣ Llegim l'event i mirem si encara és editable
+        $stmt = $pdo->prepare("
+            SELECT 
+              id,
+              maquina,
+              unitats_originals,
+              unitats_correctes,
+              created_at,
+              TIMESTAMPDIFF(MINUTE, created_at, NOW()) AS mins_passats
+            FROM produccio_events
+            WHERE id = ?
+        ");
+        $stmt->execute([$eventId]);
+        $event = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$event) {
+            header("Location: operari.php?msg=edit_error");
+            exit;
+        }
+
+        if ((int)$event['mins_passats'] > 10) {
+            // Ja no es pot corregir des de la pantalla d'operari
+            header("Location: operari.php?msg=edit_tard");
+            exit;
+        }
+
+        // Valor que actualment "compta" a la vida útil
+        $aplicat = $event['unitats_correctes'] !== null
+          ? (int)$event['unitats_correctes']
+          : (int)$event['unitats_originals'];
+
+        // Si no canvia res, sortim sense tocar la vida
+        if ($nouValor === $aplicat) {
+            header("Location: operari.php?msg=edit_ok");
+            exit;
+        }
+
+        $delta = $nouValor - $aplicat;   // pot ser positiu o negatiu
+
+        $pdo->beginTransaction();
+
+        // 2️⃣ Obtenim les unitats que van participar en aquesta producció
+        $stmtUnits = $pdo->prepare("
+            SELECT item_unit_id
+            FROM produccio_events_units
+            WHERE event_id = ?
+        ");
+        $stmtUnits->execute([$eventId]);
+        $units = $stmtUnits->fetchAll(PDO::FETCH_COLUMN);
+
+        if (!$units) {
+            // No hi ha unitats relacionades: alguna cosa no quadra
+            $pdo->rollBack();
+            header("Location: operari.php?msg=edit_error");
+            exit;
+        }
+
+        // 3️⃣ Actualitzem la vida utilitzada de cadascuna
+        $stmtUpd = $pdo->prepare("
+            UPDATE item_units
+            SET vida_utilitzada = GREATEST(0, vida_utilitzada + ?),
+                updated_at      = NOW()
+            WHERE id = ?
+        ");
+
+        foreach ($units as $unitId) {
+            $stmtUpd->execute([$delta, $unitId]);
+        }
+
+        // 4️⃣ Guardem el nou valor com a unitats_correctes
+        $stmtUpdateEvent = $pdo->prepare("
+            UPDATE produccio_events
+            SET unitats_correctes = ?
+            WHERE id = ?
+        ");
+        $stmtUpdateEvent->execute([$nouValor, $eventId]);
+
+        $pdo->commit();
+        header("Location: operari.php?msg=edit_ok");
+        exit;
+
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Error corregir produccio: " . $e->getMessage());
+        header("Location: operari.php?msg=edit_error");
+        exit;
+    }
+}
+
 
 /* ↩ 5. Retornar recanvis */
 if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
@@ -185,6 +338,29 @@ $unitatsPerMaquina = $pdo->query("
   JOIN items i ON i.id = iu.item_id
   WHERE iu.estat = 'actiu' AND iu.ubicacio = 'maquina'
 ")->fetchAll(PDO::FETCH_ASSOC);
+
+// 📜 Produccions recents (per mostrar i poder corregir)
+// Mostrem, per exemple, les últimes 2 hores, però només seran editables els < 10 min
+$recentEvents = [];
+if (!empty($maquinaActual)) {
+    $stmt = $pdo->prepare("
+        SELECT 
+          e.id,
+          e.maquina,
+          e.unitats_originals,
+          e.unitats_correctes,
+          e.created_at,
+          TIMESTAMPDIFF(MINUTE, e.created_at, NOW()) AS mins_passats
+        FROM produccio_events e
+        WHERE e.maquina = ?
+          AND e.created_at >= DATE_SUB(NOW(), INTERVAL 2 HOUR)
+        ORDER BY e.created_at DESC
+    ");
+    $stmt->execute([$maquinaActual]);
+    $recentEvents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+
 
 ob_start();
 ?>
@@ -304,6 +480,77 @@ ob_start();
     </form>
   </div>
 
+</div>
+
+<!-- 📜 Produccions recents (operari pot corregir durant 10 minuts) -->
+<div class="mt-8 bg-white p-4 rounded shadow">
+  <h3 class="text-lg font-semibold mb-3">📜 Produccions recents</h3>
+
+  <?php if (empty($recentEvents)): ?>
+    <p class="text-sm text-gray-500">Encara no hi ha produccions registrades.</p>
+  <?php else: ?>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm text-left">
+        <thead class="bg-gray-100 text-xs uppercase text-gray-600">
+          <tr>
+            <th class="px-3 py-2">Data / hora</th>
+            <th class="px-3 py-2">Màquina</th>
+            <th class="px-3 py-2 text-right">Unitats declarades</th>
+            <th class="px-3 py-2 text-right">Unitats actuals</th>
+            <th class="px-3 py-2 text-center">Acció</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <?php foreach ($recentEvents as $ev): 
+            $aplicat = $ev['unitats_correctes'] !== null
+              ? (int)$ev['unitats_correctes']
+              : (int)$ev['unitats_originals'];
+            $editable = ((int)$ev['mins_passats'] <= 10);
+          ?>
+            <tr>
+              <td class="px-3 py-2 text-gray-500">
+                <?= date('d/m/Y H:i', strtotime($ev['created_at'])) ?>
+              </td>
+              <td class="px-3 py-2 font-semibold">
+                <?= htmlspecialchars($ev['maquina']) ?>
+              </td>
+              <td class="px-3 py-2 text-right">
+                <?= (int)$ev['unitats_originals'] ?>
+              </td>
+              <td class="px-3 py-2 text-right">
+                <?php if ($editable): ?>
+                  <form method="POST" class="flex items-center justify-end gap-2">
+                    <input type="hidden" name="action" value="corregir_produccio">
+                    <input type="hidden" name="event_id" value="<?= (int)$ev['id'] ?>">
+                    <input 
+                      type="number" 
+                      name="unitats_correctes" 
+                      min="0"
+                      value="<?= $aplicat ?>"
+                      class="w-24 border rounded px-2 py-1 text-right"
+                    >
+                <?php else: ?>
+                  <span class="font-mono"><?= $aplicat ?></span>
+                <?php endif; ?>
+              </td>
+              <td class="px-3 py-2 text-center">
+                <?php if ($editable): ?>
+                    <button type="submit" class="bg-blue-600 text-white text-xs px-3 py-1 rounded">
+                      Guardar
+                    </button>
+                  </form>
+                <?php else: ?>
+                  <span class="text-xs text-gray-400">
+                    Tancat (<?= (int)$ev['mins_passats'] ?> min)
+                  </span>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  <?php endif; ?>
 </div>
 
 <script>
