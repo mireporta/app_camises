@@ -298,8 +298,8 @@ ob_start();
       <div>
         <label class="block mb-1 font-medium">Origen</label>
         <select name="origen" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200">
-          <option value="principal">Proveïdor 1</option>
-          <option value="intermig">Proveïdor 2</option>
+          <option value="Proveïdor 1">Proveïdor 1</option>
+          <option value="Proveïdor 2">Proveïdor 2</option>
         </select>
       </div>
       <button type="submit" class="bg-green-600 text-white px-5 py-2 rounded hover:bg-green-700 transition w-full">

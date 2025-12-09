@@ -40,9 +40,13 @@ $topRows = $pdo->query("
 $topLabels = array_column($topRows, 'sku');
 $topValues = array_map('intval', array_column($topRows, 'total_vida'));
 
-// Vida útil <10%
+// Vida útil <10% (ARA PER SERIAL)
 $stmt = $pdo->query("
-  SELECT iu.id, i.sku, iu.vida_utilitzada, iu.vida_total
+  SELECT iu.id,
+         iu.serial,
+         i.sku,
+         iu.vida_utilitzada,
+         iu.vida_total
   FROM item_units iu
   JOIN items i ON i.id = iu.item_id
   WHERE iu.estat='actiu'
@@ -56,6 +60,7 @@ foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $u) {
   if ($vida < 10) {
     $low_life++;
     $items_low_life[] = [
+      'serial'       => $u['serial'],
       'sku'          => $u['sku'],
       'vida_percent' => $vida
     ];
@@ -90,10 +95,22 @@ ob_start();
 
 <!-- TARGETES KPI -->
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-  <div class="card"><h3>Total recanvis</h3><div class="value text-blue-600"><?= $total_stock ?></div></div>
-  <div class="card"><h3>Recanvis amb estoc baix</h3><div class="value text-yellow-600"><?= $low_stock ?></div></div>
-  <div class="card"><h3>Vida útil &lt;10%</h3><div class="value text-red-600"><?= $low_life ?></div></div>
-  <div class="card"><h3>Recanvis a màquines</h3><div class="value text-green-600"><?= $machine_items ?></div></div>
+  <div class="card">
+    <h3>Total recanvis</h3>
+    <div class="value text-blue-600"><?= $total_stock ?></div>
+  </div>
+  <div class="card">
+    <h3>Recanvis amb estoc baix</h3>
+    <div class="value text-yellow-600"><?= $low_stock ?></div>
+  </div>
+  <div class="card">
+    <h3>Vida útil &lt;10%</h3>
+    <div class="value text-red-600"><?= $low_life ?></div>
+  </div>
+  <div class="card">
+    <h3>Recanvis a màquines</h3>
+    <div class="value text-green-600"><?= $machine_items ?></div>
+  </div>
 </div>
 
 <!-- SECCIONS INFERIORS -->
@@ -129,7 +146,7 @@ ob_start();
     <canvas id="topChart"></canvas>
   </div>
 
-  <!-- Vida útil <10% -->
+  <!-- Vida útil <10% PER SERIAL -->
   <div class="card col-span-1">
     <h3 class="font-semibold text-red-700 mb-3">❤️ Vida útil &lt;10%</h3>
     <ul class="divide-y divide-gray-100">
@@ -137,9 +154,16 @@ ob_start();
         <li class="py-2 text-gray-400 text-sm">Tots els recanvis tenen vida útil suficient 👌</li>
       <?php else: ?>
         <?php foreach ($items_low_life as $it): ?>
-          <li class="py-1 flex justify-between text-sm">
-            <span><?= htmlspecialchars($it['sku']) ?></span>
-            <span class="text-red-600 font-semibold"><?= $it['vida_percent'] ?>%</span>
+          <li class="py-1 flex justify-between items-center text-sm">
+            <div>
+              <span class="font-mono font-semibold"><?= htmlspecialchars($it['serial']) ?></span>
+              <span class="text-xs text-gray-500 ml-1">
+                (<?= htmlspecialchars($it['sku']) ?>)
+              </span>
+            </div>
+            <span class="text-red-600 font-semibold">
+              <?= $it['vida_percent'] ?>%
+            </span>
           </li>
         <?php endforeach; ?>
       <?php endif; ?>
@@ -219,7 +243,7 @@ ob_start();
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  // 👉 Sidebar peticions (això ho tenies igual)
+  // 👉 Sidebar peticions
   const sidebar = document.getElementById('peticionsSidebar');
   const toggleBtn = document.getElementById('toggleSidebarBtn');
   const closeBtn = document.getElementById('closeSidebarBtn');
@@ -246,7 +270,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
-
 
   // 🏆 Top 10 més utilitzats (Chart.js)
   const ctx = document.getElementById('topChart');
@@ -278,12 +301,10 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   }
-  
 });
-
 </script>
 <script>
-  // 🔄 Recarrega tota la pàgina cada 20 segons
+  // 🔄 Recarrega tota la pàgina cada 60 segons
   setInterval(function () {
     window.location.reload();
   }, 60000);

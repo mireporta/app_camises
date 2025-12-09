@@ -2,6 +2,45 @@
 require_once("../src/config.php");
 require_once("layout.php");
 
+// 🔹 Baixes per proveïdor (últim any)
+//
+// Lògica:
+// - m_baixa: moviments de tipus 'baixa'
+// - busquem la PRIMERA 'entrada' d'aquella unitat (item_unit_id) per saber quin proveïdor la va servir
+//   (les altres entrades poden ser 'INTERMIG' quan torna del magatzem intermig)
+$baixesPerProveidorRows = $pdo->query("
+  SELECT 
+    prov.proveidor,
+    COUNT(*) AS num_baixes
+  FROM moviments m_baixa
+  JOIN (
+    SELECT m1.item_unit_id,
+           m1.maquina AS proveidor
+    FROM moviments m1
+    JOIN (
+      SELECT item_unit_id, MIN(created_at) AS first_created
+      FROM moviments
+      WHERE tipus = 'entrada'
+      GROUP BY item_unit_id
+    ) first_e
+      ON first_e.item_unit_id = m1.item_unit_id
+     AND first_e.first_created = m1.created_at
+    WHERE m1.tipus = 'entrada'
+      AND m1.maquina IS NOT NULL
+      AND m1.maquina <> ''
+      AND m1.maquina <> 'INTERMIG'
+  ) prov
+    ON prov.item_unit_id = m_baixa.item_unit_id
+  WHERE m_baixa.tipus = 'baixa'
+    AND m_baixa.created_at >= DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
+  GROUP BY prov.proveidor
+  ORDER BY num_baixes DESC
+")->fetchAll(PDO::FETCH_ASSOC);
+
+$proveidorLabels = array_column($baixesPerProveidorRows, 'proveidor');
+$proveidorValues = array_map('intval', array_column($baixesPerProveidorRows, 'num_baixes'));
+
+
 /* === 🧾 PARÀMETRES DE FILTRE GENERALS (taula, comptadors, etc.) === */
 $search    = trim($_GET['search'] ?? '');
 $motiu     = trim($_GET['motiu'] ?? '');
@@ -228,6 +267,30 @@ ob_start();
 
 </div>
 
+<!-- 📊 Gràfica de baixes per proveïdor (últim any) -->
+<div class="bg-white rounded-xl shadow mb-8 p-5">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-semibold text-gray-800">
+      📊 Baixes per proveïdor (últim any)
+    </h2>
+    <?php if (!empty($proveidorLabels)): ?>
+      <span class="text-xs text-gray-500">
+        Total baixes: <?= array_sum($proveidorValues) ?>
+      </span>
+    <?php endif; ?>
+  </div>
+
+  <?php if (empty($proveidorLabels)): ?>
+    <p class="text-sm text-gray-500 italic">
+      Encara no hi ha baixes associades a cap proveïdor en aquest període.
+    </p>
+  <?php else: ?>
+    <div class="max-w-xl">
+      <canvas id="baixesProveidorChart"></canvas>
+    </div>
+  <?php endif; ?>
+</div>
+
 <!-- 🔍 Filtres generals -->
 <div class="bg-white p-4 rounded-lg shadow mb-6">
   <form method="GET" class="flex flex-wrap items-end gap-4">
@@ -269,6 +332,7 @@ ob_start();
     </div>
   </form>
 </div>
+
 
 <!-- 📋 Taula -->
 <div class="bg-white rounded-xl shadow overflow-x-auto">
@@ -471,6 +535,44 @@ if (machinesLabels.length > 0) {
     }
   });
 }
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const ctxProv = document.getElementById('baixesProveidorChart');
+  if (ctxProv && window.Chart) {
+    const labels = <?= json_encode($proveidorLabels, JSON_UNESCAPED_UNICODE) ?>;
+    const values = <?= json_encode($proveidorValues, JSON_UNESCAPED_UNICODE) ?>;
+
+    if (labels.length > 0) {
+      new Chart(ctxProv, {
+        type: 'bar', // si vols 'pie' o 'doughnut' també queda bé
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Nombre de baixes',
+            data: values
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: {
+              ticks: { autoSkip: false, maxRotation: 45, minRotation: 0 }
+            },
+            y: {
+              beginAtZero: true,
+              precision: 0
+            }
+          }
+        }
+      });
+    }
+  }
+});
 </script>
 
 <?php
