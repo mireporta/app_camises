@@ -271,7 +271,7 @@ ob_start();
 <div class="bg-white rounded-xl shadow mb-8 p-5">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-lg font-semibold text-gray-800">
-      📊 Baixes per proveïdor (últim any)
+      Baixes per proveïdor (últim any)
     </h2>
     <?php if (!empty($proveidorLabels)): ?>
       <span class="text-xs text-gray-500">

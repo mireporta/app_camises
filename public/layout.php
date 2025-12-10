@@ -86,12 +86,12 @@ function renderPage(string $title, string $content, string $extraScripts = '', a
           </span>
         <?php endif; ?>
       </a>
-
-      <a href="moviments.php"   class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'moviments.php'   ? 'active' : '' ?>">📜 Moviments</a>
-      <a href="produccio_historial.php"   class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'produccio_historial.php' ? 'active' : '' ?>">📈 Històric producció</a>
-      <a href="decommission.php"class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php'? 'active' : '' ?>">🗑️ Baixes</a>
-      <a href="operari.php"     class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'operari.php'    ? 'active' : '' ?>">⚙️ Operari</a>
       <a href="magatzem_map.php"  class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'magatzem_map.php' ? 'active' : '' ?>">🗺️ Mapa magatzem </a>
+      <a href="moviments.php"   class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'moviments.php'   ? 'active' : '' ?>">📜 Moviments</a>
+      <a href="produccio_historial.php"   class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'produccio_historial.php' ? 'active' : '' ?>">📈 Historial producció</a>
+      <a href="decommission.php"class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php'? 'active' : '' ?>">🗑️ Baixes</a>
+      <a href="operari.php"     class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'operari.php'    ? 'active' : '' ?>">🏭 Producció</a>
+
     </nav>
 
     <!-- Peu -->
