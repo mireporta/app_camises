@@ -319,6 +319,15 @@ ob_start();
 
   <?php foreach ($zones as $clau => $posList): ?>
     <?php
+      // Comptem posicions totals i ocupades
+      $totalPosicions = count($posList);
+      $ocupades = 0;
+      foreach ($posList as $p) {
+          if (!empty($p['unit_id'])) {
+              $ocupades++;
+          }
+      }
+
       // Agrupem per fila: A, B, C, D, Altres
       $files = [
         'A' => [],
@@ -344,7 +353,7 @@ ob_start();
           Prestatgeria <?= htmlspecialchars($clau) ?>
         </span>
         <span class="text-xs text-gray-500">
-          <?= count($posList) ?> posicions
+          <?= $ocupades ?> / <?= $totalPosicions ?> ocupades
         </span>
       </summary>
 
@@ -412,6 +421,7 @@ ob_start();
   <?php endforeach; ?>
 
 <?php endif; ?>
+
 
 
 <?php
