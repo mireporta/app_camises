@@ -69,7 +69,7 @@ $message = "";
 if (isset($_GET['msg'])) {
     $messages = [
         'peticio_ok'   => "✅ Petició enviada correctament!",
-        'vida_ok'      => "🧮 Vida actualitzada correctament!",
+        'vida_ok'      => "🧮 Unitats declarades correctament!",
         'retorn_ok'    => "↩ Camisa retornada al magatzem intermig.",
         'sku_invalid'  => "❌ El codi de camisa (SKU) no és vàlid.",
         'vida_error'       => "❌ No s'ha pogut registrar la producció.",
@@ -103,6 +103,88 @@ if (isset($_POST['action']) && $_POST['action'] === 'peticio') {
 
     header("Location: operari.php?msg=peticio_ok");
     exit;
+}
+
+/* 🔧 3b. Confirmar recanvis instal·lats (preparació → màquina, seleccionats) */
+if (isset($_POST['action']) && $_POST['action'] === 'instal_lar') {
+    $maquina = $maquinaActual; // ja ve de sessió o selecció prèvia
+
+    // IDs d'unitat seleccionades al formulari (checkboxes)
+    $selectedIds = $_POST['unit_ids'] ?? [];
+
+    // Netejar i assegurar que són enters
+    $selectedIds = array_map('intval', $selectedIds);
+    $selectedIds = array_filter($selectedIds, fn($v) => $v > 0);
+
+    if (!$maquina) {
+        header("Location: operari.php?msg=no_maquina");
+        exit;
+    }
+
+    if (empty($selectedIds)) {
+        // No s'ha seleccionat cap unitat
+        header("Location: operari.php?msg=no_unitats_seleccionades");
+        exit;
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        // Construir placeholders per IN (?,?,?,...)
+        $placeholders = implode(',', array_fill(0, count($selectedIds), '?'));
+
+        // 1️⃣ Agafem només les unitats en PREPARACIÓ per a aquesta màquina i seleccionades
+        $params = array_merge([$maquina], $selectedIds);
+        $sql = "
+            SELECT id, item_id
+            FROM item_units
+            WHERE maquina_actual = ?
+              AND ubicacio = 'preparacio'
+              AND estat = 'actiu'
+              AND id IN ($placeholders)
+        ";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $units = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!$units) {
+            $pdo->rollBack();
+            header("Location: operari.php?msg=no_unitats_valides");
+            exit;
+        }
+
+        // 2️⃣ Actualitzar unitats: PREPARACIÓ → MÀQUINA i sumar 1 cicle
+        $stmtUpd = $pdo->prepare("
+            UPDATE item_units
+            SET ubicacio = 'maquina',
+                cicles_maquina = cicles_maquina + 1,
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+
+        // 3️⃣ Registrar moviments d'entrada a màquina
+        $stmtMov = $pdo->prepare("
+            INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+            VALUES (?, ?, 'entrada', 1, 'maquina', ?, NOW())
+        ");
+
+        foreach ($units as $u) {
+            $stmtUpd->execute([$u['id']]);
+            $stmtMov->execute([$u['id'], $u['item_id'], $maquina]);
+        }
+
+        $pdo->commit();
+        header("Location: operari.php?msg=instal_ok");
+        exit;
+
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log("Error instal·lar recanvis: " . $e->getMessage());
+        header("Location: operari.php?msg=instal_error");
+        exit;
+    }
 }
 
 /* 🧮 4. Finalitzar producció (actualitzar vida útil a les unitats i registrar event) */
@@ -360,18 +442,33 @@ if (!empty($maquinaActual)) {
     $recentEvents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// 🔍 Unitats en PREPARACIÓ per a la màquina actual
+$unitatsPreparacio = [];
+if (!empty($maquinaActual)) {
+    $stmt = $pdo->prepare("
+        SELECT iu.id, iu.serial, i.sku
+        FROM item_units iu
+        JOIN items i ON i.id = iu.item_id
+        WHERE iu.maquina_actual = ?
+          AND iu.ubicacio = 'preparacio'
+          AND iu.estat = 'actiu'
+        ORDER BY i.sku, iu.serial
+    ");
+    $stmt->execute([$maquinaActual]);
+    $unitatsPreparacio = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
 
 ob_start();
 ?>
 
 <?php if ($message): ?>
-  <div class="mb-4 p-3 bg-green-100 border border-green-300 text-green-800 rounded">
+  <div class="mb-2 p-3 bg-green-100 border border-green-300 text-green-800 rounded">
     <?= htmlspecialchars($message) ?>
   </div>
 <?php endif; ?>
 
-<p class="mb-4 text-sm text-gray-600 flex items-center justify-between">
+<p class="mb-2 text-sm text-gray-600 flex items-center justify-between">
   <span>
     Màquina actual: <span class="font-semibold"><?= htmlspecialchars($maquinaActual) ?></span>
   </span>
@@ -383,7 +480,8 @@ ob_start();
 </p>
 
 
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="mt-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+
 
   <!-- 📥 FER PETICIÓ -->
   <div class="bg-white p-4 rounded shadow">
@@ -419,7 +517,7 @@ ob_start();
         </datalist>
       </div>
 
-      <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">
+      <button type="submit" class="bg-sky-500 text-white px-4 py-2 rounded hover:bg-sky-700 w-full">
         Enviar petició
       </button>
     </form>
@@ -444,8 +542,8 @@ ob_start();
         <input type="number" name="unitats" min="1" required class="w-full border p-2 rounded">
       </div>
 
-      <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 w-full">
-        Actualitzar vida
+      <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-700 w-full">
+        Confirmar producció
       </button>
     </form>
   </div>
@@ -482,76 +580,128 @@ ob_start();
 
 </div>
 
-<!-- 📜 Produccions recents (operari pot corregir durant 10 minuts) -->
-<div class="mt-8 bg-white p-4 rounded shadow">
-  <h3 class="text-lg font-semibold mb-3">📜 Produccions recents</h3>
+<!-- Bloc combinat: Recanvis pendents + Produccions recents -->
+<div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-  <?php if (empty($recentEvents)): ?>
-    <p class="text-sm text-gray-500">Encara no hi ha produccions registrades.</p>
-  <?php else: ?>
-    <div class="overflow-x-auto">
-      <table class="min-w-full text-sm text-left">
-        <thead class="bg-gray-100 text-xs uppercase text-gray-600">
-          <tr>
-            <th class="px-3 py-2">Data / hora</th>
-            <th class="px-3 py-2">Màquina</th>
-            <th class="px-3 py-2 text-right">Unitats declarades</th>
-            <th class="px-3 py-2 text-right">Unitats actuals</th>
-            <th class="px-3 py-2 text-center">Acció</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          <?php foreach ($recentEvents as $ev): 
-            $aplicat = $ev['unitats_correctes'] !== null
-              ? (int)$ev['unitats_correctes']
-              : (int)$ev['unitats_originals'];
-            $editable = ((int)$ev['mins_passats'] <= 10);
-          ?>
-            <tr>
-              <td class="px-3 py-2 text-gray-500">
-                <?= date('d/m/Y H:i', strtotime($ev['created_at'])) ?>
-              </td>
-              <td class="px-3 py-2 font-semibold">
-                <?= htmlspecialchars($ev['maquina']) ?>
-              </td>
-              <td class="px-3 py-2 text-right">
-                <?= (int)$ev['unitats_originals'] ?>
-              </td>
-              <td class="px-3 py-2 text-right">
-                <?php if ($editable): ?>
-                  <form method="POST" class="flex items-center justify-end gap-2">
-                    <input type="hidden" name="action" value="corregir_produccio">
-                    <input type="hidden" name="event_id" value="<?= (int)$ev['id'] ?>">
-                    <input 
-                      type="number" 
-                      name="unitats_correctes" 
-                      min="0"
-                      value="<?= $aplicat ?>"
-                      class="w-24 border rounded px-2 py-1 text-right"
-                    >
-                <?php else: ?>
-                  <span class="font-mono"><?= $aplicat ?></span>
-                <?php endif; ?>
-              </td>
-              <td class="px-3 py-2 text-center">
-                <?php if ($editable): ?>
-                    <button type="submit" class="bg-blue-600 text-white text-xs px-3 py-1 rounded">
-                      Guardar
-                    </button>
-                  </form>
-                <?php else: ?>
-                  <span class="text-xs text-gray-400">
-                    Tancat (<?= (int)$ev['mins_passats'] ?> min)
-                  </span>
-                <?php endif; ?>
-              </td>
+  <!-- 🧩 Columna 1: Instal·lar unitats en preparació -->
+  <div class="bg-white p-4 rounded shadow">
+    <h3 class="text-lg font-semibold mb-3">Recanvis pendents d’entrar</h3>
+
+    <?php if (empty($unitatsPreparacio)): ?>
+      <p class="text-sm text-gray-500">
+        No hi ha recanvis en preparació per a aquesta màquina.
+      </p>
+    <?php else: ?>
+      <form method="POST">
+        <input type="hidden" name="action" value="instal_lar">
+
+        <table class="w-full text-sm border mb-3">
+          <thead>
+            <tr class="bg-gray-100">
+              <th class="border px-2 py-1 text-center w-10">✔</th>
+              <th class="border px-2 py-1 text-left">SKU</th>
             </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-  <?php endif; ?>
+          </thead>
+          <tbody>
+            <?php foreach ($unitatsPreparacio as $u): ?>
+              <tr>
+                <td class="border px-2 py-1 text-center">
+                  <input
+                    type="checkbox"
+                    name="unit_ids[]"
+                    value="<?= (int)$u['id'] ?>"
+                    class="h-4 w-4"
+                  >
+                </td>
+                <td class="border px-2 py-1"><?= htmlspecialchars($u['sku']) ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+
+        <div class="flex items-center justify-between">
+          <button type="submit"
+                  class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-700">
+            Entrar recanvis
+          </button>
+        </div>
+      </form>
+    <?php endif; ?>
+  </div>
+
+  <!-- 🧾 Columna 2: Produccions recents -->
+  <div class="bg-white p-4 rounded shadow">
+    <h3 class="text-lg font-semibold mb-3">Produccions recents</h3>
+
+    <?php if (empty($recentEvents)): ?>
+      <p class="text-sm text-gray-500">Encara no hi ha produccions registrades.</p>
+    <?php else: ?>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm text-left">
+          <thead class="bg-gray-100 text-xs uppercase text-gray-600">
+            <tr>
+              <th class="px-3 py-2">Data / hora</th>
+              <th class="px-3 py-2">Màquina</th>
+              <th class="px-3 py-2 text-right">Unitats declarades</th>
+              <th class="px-3 py-2 text-right">Unitats actuals</th>
+              <th class="px-3 py-2 text-center">Acció</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <?php foreach ($recentEvents as $ev):
+              $aplicat = $ev['unitats_correctes'] !== null
+                ? (int)$ev['unitats_correctes']
+                : (int)$ev['unitats_originals'];
+              $editable = ((int)$ev['mins_passats'] <= 10);
+            ?>
+              <tr>
+                <td class="px-3 py-2 text-gray-500">
+                  <?= date('d/m/Y H:i', strtotime($ev['created_at'])) ?>
+                </td>
+                <td class="px-3 py-2 font-semibold">
+                  <?= htmlspecialchars($ev['maquina']) ?>
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <?= (int)$ev['unitats_originals'] ?>
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <?php if ($editable): ?>
+                    <form method="POST" class="flex items-center justify-end gap-2">
+                      <input type="hidden" name="action" value="corregir_produccio">
+                      <input type="hidden" name="event_id" value="<?= (int)$ev['id'] ?>">
+                      <input
+                        type="number"
+                        name="unitats_correctes"
+                        min="0"
+                        value="<?= $aplicat ?>"
+                        class="w-24 border rounded px-2 py-1 text-right"
+                      >
+                  <?php else: ?>
+                    <span class="font-mono"><?= $aplicat ?></span>
+                  <?php endif; ?>
+                </td>
+                <td class="px-3 py-2 text-center">
+                  <?php if ($editable): ?>
+                      <button type="submit" class="bg-red-500 text-white text-xs px-3 py-1 rounded hover:bg-red-700">
+                        Corregir
+                      </button>
+                    </form>
+                  <?php else: ?>
+                    <span class="text-xs text-gray-400">
+                      Tancat (<?= (int)$ev['mins_passats'] ?> min)
+                    </span>
+                  <?php endif; ?>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
+  </div>
+
 </div>
+
 
 <script>
   // Dades de unitats a màquina per al select de retorn

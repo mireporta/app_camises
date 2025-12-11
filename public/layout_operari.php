@@ -16,11 +16,15 @@ function renderOperariPage($title, $content) {
     <span class="text-sm opacity-75">Pantalla Operari</span>
   </header>
 
-  <main class="flex items-start justify-center min-h-[calc(100vh-64px)] p-40">
-     <div class="w-full max-w-7xl">
+  <!-- Abans: min-h + p-20 (massa aire) -->
+  <!-- <main class="flex items-start justify-center min-h-[calc(100vh-64px)] p-20"> -->
+
+  <!-- Ara: menys padding i sense min-height forçada -->
+  <main class="flex items-start justify-center p-4 md:p-10">
+    <div class="w-full max-w-7xl">
       <?= $content ?>
-     </div>
-    </main>
+    </div>
+  </main>
 
 </body>
 </html>

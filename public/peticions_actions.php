@@ -21,51 +21,64 @@ if (!$id || !$action) {
 
 try {
     if ($action === 'serveix') {
-            // Serveix petició
-            $stmt = $pdo->prepare("SELECT sku, maquina FROM peticions WHERE id = ?");
-            $stmt->execute([$id]);
-            $peticio = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$peticio) throw new Exception('Petició no trobada.');
-
-            // Obtenim unitat disponible
-            $stmt = $pdo->prepare("
-                SELECT iu.id, iu.item_id, iu.estat, iu.ubicacio, iu.sububicacio
-                FROM item_units iu
-                JOIN items i ON i.id = iu.item_id
-                WHERE iu.id = ? AND i.sku = ?
-            ");
-            $stmt->execute([$unit_id, $peticio['sku']]);
-            $unit = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$unit) throw new Exception('Unitat no vàlida per aquest SKU.');
-
-            // 🔹 Actualitza ubicació → màquina (sense tocar la sububicació!)
-            $update = $pdo->prepare("
-                UPDATE item_units
-                SET ubicacio = 'maquina',
-                    maquina_actual = ?,
-                    cicles_maquina = cicles_maquina + 1,
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-            $update->execute([$peticio['maquina'], $unit_id]);
-
-            // 🔹 Actualitza estat de la petició
-            $pdo->prepare("UPDATE peticions SET estat='servida', updated_at=NOW() WHERE id=?")
-                ->execute([$id]);
-
-            // 🔹 Registra moviment (opcional, però útil)
-            if ($pdo->query("SHOW TABLES LIKE 'moviments'")->rowCount() > 0) {
-                $mov = $pdo->prepare("
-                    INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
-                    VALUES (?, ?, 'sortida', 1, 'maquina', ?, NOW())
-                ");
-                $mov->execute([$unit_id, $unit['item_id'], $peticio['maquina']]);
-            }
-
-            echo json_encode(['success' => true]);
-            exit;
+        // Serveix petició
+        $stmt = $pdo->prepare("SELECT sku, maquina, estat FROM peticions WHERE id = ?");
+        $stmt->execute([$id]);
+        $peticio = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$peticio) {
+            throw new Exception('Petició no trobada.');
+        }
+        if ($peticio['estat'] !== 'pendent') {
+            throw new Exception('La petició ja està gestionada.');
         }
 
+        // Obtenim unitat disponible per al SKU
+        $stmt = $pdo->prepare("
+            SELECT iu.id, iu.item_id, iu.estat, iu.ubicacio, iu.sububicacio, i.sku
+            FROM item_units iu
+            JOIN items i ON i.id = iu.item_id
+            WHERE iu.id = ? AND i.sku = ?
+        ");
+        $stmt->execute([$unit_id, $peticio['sku']]);
+        $unit = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$unit) {
+            throw new Exception('Unitat no vàlida per aquest SKU.');
+        }
+
+        // Validacions extra: ha d'estar al magatzem i activa
+        if ($unit['estat'] !== 'actiu') {
+            throw new Exception('La unitat no està activa.');
+        }
+        if ($unit['ubicacio'] !== 'magatzem') {
+            throw new Exception('La unitat no és al magatzem.');
+        }
+
+        // 🔹 MAGATZEM → PREPARACIÓ (no sumem cicles, no compta com a producció)
+        $update = $pdo->prepare("
+            UPDATE item_units
+            SET ubicacio = 'preparacio',
+                maquina_actual = ?,
+                updated_at = NOW()
+            WHERE id = ?
+        ");
+        $update->execute([$peticio['maquina'], $unit_id]);
+
+        // 🔹 Actualitza estat de la petició
+        $pdo->prepare("UPDATE peticions SET estat='servida', updated_at=NOW() WHERE id=?")
+            ->execute([$id]);
+
+        // 🔹 Registra moviment (sortida cap a PREPARACIÓ)
+        if ($pdo->query("SHOW TABLES LIKE 'moviments'")->rowCount() > 0) {
+            $mov = $pdo->prepare("
+                INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+                VALUES (?, ?, 'sortida', 1, 'preparacio', ?, NOW())
+            ");
+            $mov->execute([$unit_id, $unit['item_id'], $peticio['maquina']]);
+        }
+
+        echo json_encode(['success' => true]);
+        exit;
+    }
 
     elseif ($action === 'anula') {
         $upd = $pdo->prepare("UPDATE peticions SET estat='anulada', updated_at=NOW() WHERE id=?");
