@@ -20,7 +20,7 @@ $skuFilter = trim($_GET['sku'] ?? '');
 
 // 🔹 Consulta d'items amb filtre opcional per SKU
 $sqlItems = "
-  SELECT 
+    SELECT 
     i.id,
     i.sku,
     i.category,
@@ -29,6 +29,7 @@ $sqlItems = "
     i.active,
     COALESCE(t.total_cnt, 0) AS total_stock,
     COALESCE(g.cnt_magatzem, 0) AS qty_magatzem,
+    COALESCE(p.cnt_preparacio, 0) AS qty_preparacio,
     COALESCE(im.cnt_intermig, 0) AS qty_intermig,
     COALESCE(m.cnt_maquina, 0) AS qty_maquina
   FROM items i
@@ -40,6 +41,10 @@ $sqlItems = "
       SELECT item_id, COUNT(*) AS cnt_magatzem
       FROM item_units WHERE estat='actiu' AND ubicacio='magatzem' GROUP BY item_id
   ) g ON g.item_id = i.id
+  LEFT JOIN (
+      SELECT item_id, COUNT(*) AS cnt_preparacio
+      FROM item_units WHERE estat='actiu' AND ubicacio='preparacio' GROUP BY item_id
+  ) p ON p.item_id = i.id
   LEFT JOIN (
       SELECT item_id, COUNT(*) AS cnt_intermig
       FROM item_units WHERE estat='actiu' AND ubicacio='intermig' GROUP BY item_id
@@ -152,7 +157,7 @@ if (!empty($_SESSION['import_message'])): ?>
         <th class="px-4 py-2 text-center">Total</th>
         <th class="px-4 py-2 text-center">
           Ubicacions<br>
-          <span class="text-[11px] text-gray-500">(MAG / INT / MAQ)</span>
+          <span class="text-[11px] text-gray-500">( MAG / PRE / INT / MAQ )</span>
         </th>
         <th class="px-4 py-2 text-center">Mínim</th>
         <th class="px-4 py-2 text-center">Plànol</th>
@@ -167,6 +172,7 @@ if (!empty($_SESSION['import_message'])): ?>
         <td class="px-4 py-2 text-center font-semibold"><?= (int)$item['total_stock'] ?></td>
         <td class="px-4 py-2 text-center font-mono text-sm">
           <?= (int)$item['qty_magatzem'] ?> /
+          <?= (int)$item['qty_preparacio'] ?> /
           <?= (int)$item['qty_intermig'] ?> /
           <?= (int)$item['qty_maquina'] ?>
         </td>
@@ -221,11 +227,41 @@ if (!empty($_SESSION['import_message'])): ?>
             ?>
             <tr class="border-t border-gray-100">
               <td class="px-3 py-1 font-mono"><?= htmlspecialchars($u['serial']) ?></td>
-              <td class="px-3 py-1 capitalize">
-                <?= $u['ubicacio'] === 'maquina' && $u['maquina_actual'] 
-                      ? 'Màquina ' . htmlspecialchars($u['maquina_actual']) 
-                      : ucfirst(htmlspecialchars($u['ubicacio'])) ?>
-              </td>
+              <td class="px-3 py-1">
+              <?php
+                $ubicacioLabel = '';
+
+                switch ($u['ubicacio']) {
+                  case 'magatzem':
+                    $ubicacioLabel = 'Magatzem';
+                    break;
+                  case 'intermig':
+                    $ubicacioLabel = 'Intermig';
+                    break;
+                  case 'preparacio':
+                    $ubicacioLabel = 'Preparació';
+                    break;
+                  case 'maquina':
+                    $ubicacioLabel = 'Màquina';
+                    break;
+                  default:
+                    $ubicacioLabel = ucfirst(htmlspecialchars($u['ubicacio']));
+                    break;
+                }
+
+                // Afegim info de màquina quan toca
+                if (($u['ubicacio'] === 'maquina' || $u['ubicacio'] === 'preparacio') && !empty($u['maquina_actual'])) {
+                    // ex: "Màquina P351" o "Preparació (Màquina P351)"
+                    if ($u['ubicacio'] === 'maquina') {
+                        $ubicacioLabel .= ' ' . htmlspecialchars($u['maquina_actual']);
+                    } else {
+                        $ubicacioLabel .= ' (Màquina ' . htmlspecialchars($u['maquina_actual']) . ')';
+                    }
+                }
+
+                echo htmlspecialchars($ubicacioLabel, ENT_QUOTES, 'UTF-8');
+              ?>
+            </td>
               <td class="px-3 py-1 text-center"><?= htmlspecialchars($u['sububicacio'] ?? '—') ?></td>
               <td class="px-3 py-1 text-center"><?= (int)$u['cicles_maquina'] ?></td>
               <td class="px-3 py-2 text-center">
