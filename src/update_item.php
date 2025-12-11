@@ -10,21 +10,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($id <= 0) {
         die("❌ Error: falta ID d'ítem.");
     }
+//Pujar plànol
+if (!empty($_FILES['plan_file']['name'])) {
 
-    // 📎 Comprovem si s’ha pujat un nou plànol
-    if (!empty($_FILES['plan_file']['name'])) {
-        $uploadDir = __DIR__ . '/../public/uploads/';
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0777, true);
-        }
+    // Validar extensions segures
+    $allowedExtensions = ['pdf', 'png', 'jpg', 'jpeg'];
+    $ext = strtolower(pathinfo($_FILES['plan_file']['name'], PATHINFO_EXTENSION));
 
-        $fileName   = time() . '_' . basename($_FILES['plan_file']['name']);
-        $targetPath = $uploadDir . $fileName;
-
-        if (move_uploaded_file($_FILES['plan_file']['tmp_name'], $targetPath)) {
-            $plan_file = $fileName;
-        }
+    if (!in_array($ext, $allowedExtensions)) {
+        die("Tipus de fitxer no permès.");
     }
+
+    $uploadDir = __DIR__ . '/../public/uploads/';
+
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+
+    // Crear nom segur
+    $fileName = time() . '_' . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $_FILES['plan_file']['name']);
+    $targetPath = $uploadDir . $fileName;
+
+    // Moure arxiu pujat
+    if (move_uploaded_file($_FILES['plan_file']['tmp_name'], $targetPath)) {
+        $plan_file = $fileName;
+    }
+}
+
 
     // 🛠 Construïm l’UPDATE
     $fields = [];

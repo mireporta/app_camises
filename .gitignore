@@ -7,3 +7,6 @@ desktop.ini
 
 # Fitxers de log (per si algun dia en generes)
 *.log
+
+#Config local
+/src/config.local.php

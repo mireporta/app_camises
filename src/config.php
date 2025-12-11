@@ -1,26 +1,28 @@
 <?php
-// src/config.php - configuració per al servidor real proporcionat
-// return [
-//     'db' => [
-//         'dsn' => 'mysql:host=localhost;dbname=inventari_camises;charset=utf8mb4',
-//         'user' => 'root',
-//         'pass' => '',
-//         'options' => [
-//             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-//             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-//         ],
-//     ],
-// ];
+// src/config.php
 
-$host = "localhost";
-$dbname = "inventari_camises_v2";
-$user = "root";
-$pass = "";
+// Si existeix config.local.php, vol dir que som en local
+if (file_exists(__DIR__ . '/config.local.php')) {
+    require __DIR__ . '/config.local.php';
+} else {
+    // Configuració per DEFECTE (servidor)
+    $host   = 'localhost';
+    $dbname = 'inventari_camises_v2';
+    $user   = 'hamelin';
+    $pass   = 'Camises2025';
+}
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $user, $pass);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo = new PDO(
+        "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
+        $user,
+        $pass,
+        [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ]
+    );
 } catch (PDOException $e) {
-    die("Error de connexió: " . $e->getMessage());
+    error_log('Error de connexió BD: ' . $e->getMessage());
+    die('Error de connexió a la base de dades.');
 }
-?>
