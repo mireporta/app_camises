@@ -18,6 +18,135 @@ $allPositions = $pdo->query("
     ORDER BY codi ASC
 ")->fetchAll(PDO::FETCH_COLUMN);
 
+// 🔹 Helper: obtenir unitats disponibles al MAGATZEM per SKU
+function obtenirUnitatsDisponibles(PDO $pdo, string $sku): array {
+    $stmt = $pdo->prepare("
+        SELECT iu.id, iu.serial, iu.sububicacio
+        FROM item_units iu
+        JOIN items i ON i.id = iu.item_id
+        WHERE i.sku = ?
+          AND iu.estat = 'actiu'
+          AND iu.ubicacio = 'magatzem'
+        ORDER BY iu.serial ASC
+    ");
+    $stmt->execute([$sku]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// 🔹 Peticions pendents (igual que al dashboard, però només PENDENT)
+$peticions = $pdo->query("
+    SELECT 
+        id,
+        sku,
+        maquina,
+        estat,
+        created_at,
+        updated_at
+    FROM peticions
+    WHERE estat = 'pendent'
+    ORDER BY created_at ASC
+")->fetchAll(PDO::FETCH_ASSOC);
+
+/* 🟢 0️⃣ SERVIR PETICIÓ DES DE LA PDA (igual lògica que peticions_actions.php) */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'serveix_pda')) {
+    $id      = (int)($_POST['peticio_id'] ?? 0);
+    $unit_id = (int)($_POST['unit_id'] ?? 0);
+
+    $msg = "";
+
+    if (!$id || !$unit_id) {
+        $msg = "❌ Falten dades per servir la petició.";
+    } else {
+        try {
+            // 👉 Copiem la mateixa lògica que a peticions_actions.php (serveix)
+            $stmt = $pdo->prepare("SELECT sku, maquina, estat FROM peticions WHERE id = ?");
+            $stmt->execute([$id]);
+            $peticio = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$peticio) {
+                throw new Exception('Petició no trobada.');
+            }
+            if ($peticio['estat'] !== 'pendent') {
+                throw new Exception('La petició ja està gestionada.');
+            }
+
+            // Obtenim unitat disponible per al SKU
+            $stmt = $pdo->prepare("
+                SELECT iu.id, iu.item_id, iu.estat, iu.ubicacio, iu.sububicacio, i.sku
+                FROM item_units iu
+                JOIN items i ON i.id = iu.item_id
+                WHERE iu.id = ? AND i.sku = ?
+            ");
+            $stmt->execute([$unit_id, $peticio['sku']]);
+            $unit = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$unit) {
+                throw new Exception('Unitat no vàlida per aquest SKU.');
+            }
+
+            // Validacions extra: ha d'estar al magatzem i activa
+            if ($unit['estat'] !== 'actiu') {
+                throw new Exception('La unitat no està activa.');
+            }
+            if ($unit['ubicacio'] !== 'magatzem') {
+                throw new Exception('La unitat no és al magatzem.');
+            }
+
+            // 🔹 MAGATZEM → PREPARACIÓ (no sumem cicles)
+            $update = $pdo->prepare("
+                UPDATE item_units
+                SET ubicacio = 'preparacio',
+                    maquina_actual = ?,
+                    updated_at = NOW()
+                WHERE id = ?
+            ");
+            $update->execute([$peticio['maquina'], $unit_id]);
+
+            // 🔹 Actualitza estat de la petició
+            $pdo->prepare("UPDATE peticions SET estat='servida', updated_at=NOW() WHERE id=?")
+                ->execute([$id]);
+
+            // 🔹 Registra moviment (sortida cap a PREPARACIÓ)
+            if ($pdo->query("SHOW TABLES LIKE 'moviments'")->rowCount() > 0) {
+                $mov = $pdo->prepare("
+                    INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
+                    VALUES (?, ?, 'sortida', 1, 'preparacio', ?, NOW())
+                ");
+                $mov->execute([$unit_id, $unit['item_id'], $peticio['maquina']]);
+            }
+
+            $msg = "✅ Petició servida correctament per a la màquina {$peticio['maquina']}.";
+
+        } catch (Throwable $e) {
+            $msg = "❌ Error en servir la petició: " . $e->getMessage();
+        }
+    }
+
+    $_SESSION['entry_pda_message'] = $msg;
+    header("Location: entry_pda.php");
+    exit;
+}
+
+/* 🔴 0️⃣ BIS: ANULAR PETICIÓ DES DE LA PDA */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'anula_pda')) {
+    $id = (int)($_POST['peticio_id'] ?? 0);
+    $msg = "";
+
+    if (!$id) {
+        $msg = "❌ Falta l'ID de la petició.";
+    } else {
+        try {
+            $upd = $pdo->prepare("UPDATE peticions SET estat='anulada', updated_at=NOW() WHERE id=?");
+            $upd->execute([$id]);
+            $msg = "🛑 Petició anul·lada correctament.";
+        } catch (Throwable $e) {
+            $msg = "❌ Error en anul·lar la petició: " . $e->getMessage();
+        }
+    }
+
+    $_SESSION['entry_pda_message'] = $msg;
+    header("Location: entry_pda.php");
+    exit;
+}
+
 /* 🧾 1️⃣ Registrar entrada manual (compra o proveïdor) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manual') {
     $sku         = trim($_POST['sku'] ?? '');
@@ -244,19 +373,128 @@ $intermigItems = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 ob_start();
+
+/* 🟦 MODE: SELECCIONAR UNITAT PER SERVIR UNA PETICIÓ */
+if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
+    $peticioId = (int)$_GET['serveix_peticio'];
+    $skuServeix = $_GET['sku'];
+    $unitats = obtenirUnitatsDisponibles($pdo, $skuServeix);
+    ?>
+    <h2 class="text-2xl font-bold mb-4">Servir recanvi</h2>
+
+    <p class="mb-3 text-gray-700">
+        Petició <strong>#<?= $peticioId ?></strong> — SKU <strong><?= htmlspecialchars($skuServeix) ?></strong>
+    </p>
+
+    <?php if (empty($unitats)): ?>
+        <div class="p-3 bg-red-100 border border-red-300 rounded text-sm">
+            ❌ No hi ha unitats disponibles al magatzem per aquest SKU.
+        </div>
+        <a href="entry_pda.php" class="mt-4 inline-block bg-gray-300 px-4 py-2 rounded text-sm">
+            ← Tornar
+        </a>
+    <?php else: ?>
+        <div class="space-y-3 mt-4">
+            <?php foreach ($unitats as $u): ?>
+                <div class="border rounded p-3 bg-white shadow text-sm">
+                    <div><strong>Serial:</strong> <span class="font-mono"><?= htmlspecialchars($u['serial']) ?></span></div>
+                    <div><strong>Posició magatzem:</strong> <?= htmlspecialchars($u['sububicacio'] ?? '—') ?></div>
+
+                    <form method="POST" class="mt-2">
+                        <input type="hidden" name="action" value="serveix_pda">
+                        <input type="hidden" name="peticio_id" value="<?= $peticioId ?>">
+                        <input type="hidden" name="unit_id" value="<?= (int)$u['id'] ?>">
+
+                        <button type="submit"
+                                class="bg-green-600 text-white px-4 py-2 rounded w-full text-sm font-semibold">
+                            Servir
+                        </button>
+                    </form>
+                </div>
+            <?php endforeach; ?>
+        </div>
+
+        <a href="entry_pda.php" class="mt-6 inline-block bg-gray-300 px-4 py-2 rounded text-sm">
+            ← Cancel·lar i tornar
+        </a>
+    <?php endif;
+
+    $content = ob_get_clean();
+    renderPage("Servir recanvi", $content, '', ['noSidebar' => true]);
+    exit;
+}
 ?>
 
-<h2 class="text-2xl font-bold mb-4">Entrades (mode PDA)</h2>
+<h2 class="text-2xl font-bold mb-4">Mode PDA</h2>
 
 <?php if ($message): ?>
   <div class="mb-4 p-3 rounded text-sm
-              <?= str_starts_with($message, '✅') ? 'bg-green-100 border border-green-300 text-green-800'
-                                                 : 'bg-red-100 border border-red-300 text-red-800' ?>">
+              <?= str_starts_with($message, '✅') || str_starts_with($message, '🟢') || str_starts_with($message, '🛑')
+                    ? 'bg-green-100 border border-green-300 text-green-800'
+                    : 'bg-red-100 border border-red-300 text-red-800' ?>">
     <?= htmlspecialchars($message) ?>
   </div>
 <?php endif; ?>
 
-<div class="grid grid-cols-1 gap-64">
+<div class="grid grid-cols-1 gap-8">
+
+  <!-- 📋 PETICIONS DE MÀQUINES (PENDENTS, AMB BOTONS VERD/ROIG) -->
+  <div class="bg-white p-4 rounded-lg shadow-md">
+    <div class="flex justify-between items-center mb-3">
+      <h3 class="text-lg font-bold text-gray-700">📋 Peticions de màquines</h3>
+      <span class="text-sm text-gray-500"><?= count($peticions) ?> pendents</span>
+    </div>
+
+    <?php if (empty($peticions)): ?>
+      <p class="text-gray-500 italic text-sm">No hi ha peticions pendents.</p>
+    <?php else: ?>
+      <div class="space-y-3">
+        <?php foreach ($peticions as $p): ?>
+          <div class="p-3 border border-yellow-300 bg-yellow-50 rounded-lg shadow-sm text-sm">
+            <div class="flex justify-between mb-1">
+              <div>
+                <div><strong>SKU:</strong> <?= htmlspecialchars($p['sku']) ?></div>
+                <div><strong>Màquina:</strong> <?= htmlspecialchars($p['maquina']) ?></div>
+              </div>
+              <div class="text-right text-xs text-gray-600">
+                <?= date("d/m H:i", strtotime($p['created_at'])) ?>
+              </div>
+            </div>
+
+            <div class="mt-2 flex items-center justify-between">
+              <span class="inline-block bg-yellow-300 px-2 py-1 rounded text-xs">
+                ⏳ Pendent
+              </span>
+
+              <div class="flex items-center gap-2">
+                <!-- Botó verd rodó (SERVIR) -->
+                <form method="GET" action="entry_pda.php">
+                  <input type="hidden" name="serveix_peticio" value="<?= (int)$p['id'] ?>">
+                  <input type="hidden" name="sku" value="<?= htmlspecialchars($p['sku']) ?>">
+                  <button type="submit"
+                          class="bg-green-500 hover:bg-green-600 text-white p-2 rounded-full"
+                          title="Servir">
+                    ✔
+                  </button>
+                </form>
+
+                <!-- Botó vermell rodó (ANULAR) -->
+                <form method="POST" onsubmit="return confirm('Segur que vols anul·lar aquesta petició?');">
+                  <input type="hidden" name="action" value="anula_pda">
+                  <input type="hidden" name="peticio_id" value="<?= (int)$p['id'] ?>">
+                  <button type="submit"
+                          class="bg-red-500 hover:bg-red-600 text-white p-2 rounded-full"
+                          title="Anul·lar">
+                    ✖
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+  </div>
 
   <!-- 📦 Magatzem intermig (PDA friendly) -->
   <div class="bg-white p-4 rounded-lg shadow-md">
@@ -293,7 +531,7 @@ ob_start();
 
               <button type="submit"
                       class="bg-green-600 text-white px-4 py-2 rounded text-base font-semibold">
-                ✅ Acceptar al magatzem
+                Acceptar al magatzem
               </button>
             </form>
 
@@ -315,7 +553,7 @@ ob_start();
               <button type="submit"
                       class="bg-red-600 text-white px-4 py-2 rounded text-sm font-semibold"
                       onclick="return confirm('Segur que vols donar de baixa aquest recanvi?');">
-                🗑️ Donar de baixa
+                Donar de baixa
               </button>
             </form>
           </div>
@@ -331,71 +569,69 @@ ob_start();
   <?php endforeach; ?>
 </datalist>
 
-  <!-- 🧾 Entrada manual (PDA friendly) -->
-  <div class="bg-white p-4 rounded-lg shadow-md">
-    <h3 class="text-lg font-bold mb-3 text-gray-700">📥 Entrada de recanvi nou</h3>
-    <form method="POST" class="space-y-3">
-      <input type="hidden" name="action" value="manual">
+<!-- 🧾 Entrada manual (PDA friendly) -->
+<div class="bg-white p-4 rounded-lg shadow-md mt-8">
+  <h3 class="text-lg font-bold mb-3 text-gray-700">📥 Entrada de recanvi nou</h3>
+  <form method="POST" class="space-y-3">
+    <input type="hidden" name="action" value="manual">
 
-      <div>
-        <label class="block mb-1 text-sm font-medium">Codi camisa (SKU)</label>
-        <input type="text" name="sku" required
-               class="w-full p-2 border rounded text-lg"
-               placeholder="Escaneja o escriu SKU">
-      </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium">Codi camisa (SKU)</label>
+      <input type="text" name="sku" required
+             class="w-full p-2 border rounded text-lg"
+             placeholder="Ex: ENRE001">
+    </div>
 
-      <div>
-        <label class="block mb-1 text-sm font-medium">Codi sèrie (Serial)</label>
-        <input type="text" name="serial" required
-               class="w-full p-2 border rounded text-lg"
-               placeholder="Escaneja o escriu serial">
-      </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium">Codi sèrie (Serial)</label>
+      <input type="text" name="serial" required
+             class="w-full p-2 border rounded text-lg"
+             placeholder="Ex: ENRE001.01">
+    </div>
 
-      <div>
-        <label class="block mb-1 text-sm font-medium">Categoria</label>
-        <input type="text" name="categoria"
-               class="w-full p-2 border rounded text-lg"
-               placeholder="Ex: A4 / A5 / A4+">
-      </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium">Categoria</label>
+      <input type="text" name="categoria"
+             class="w-full p-2 border rounded text-lg"
+             placeholder="Ex: A4 / A5 / A4+">
+    </div>
 
-      <div>
-        <label class="block mb-1 text-sm font-medium">Vida útil total (hores o cicles)</label>
-        <input type="number" name="vida_total" min="1"
-               class="w-full p-2 border rounded text-lg"
-               placeholder="Ex: 200">
-      </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium">Vida útil total (hores o cicles)</label>
+      <input type="number" name="vida_total" min="1"
+             class="w-full p-2 border rounded text-lg"
+             placeholder="Ex: 200">
+    </div>
 
-      <div>
-        <label class="block mb-1 text-sm font-medium">Proveïdor</label>
-        <input type="text"
-               name="proveidor"
-               class="w-full p-2 border rounded text-lg"
-               placeholder="Ex: Proveïdor 1 / Empresa X"
-               required>
-      </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium">Proveïdor</label>
+      <input type="text"
+             name="proveidor"
+             class="w-full p-2 border rounded text-lg"
+             placeholder="Ex: Proveïdor X / Empresa X"
+             required>
+    </div>
 
-      <div>
-        <label class="block mb-1 text-sm font-medium">Posició magatzem (opcional)</label>
-        <input
-          type="text"
-          name="sububicacio"
-          list="llista-sububicacions"
-          class="w-full p-2 border rounded text-lg font-mono"
-          placeholder="Ex: 01A01 (o buit per posició neutra)"
-        >
-        <p class="text-xs text-gray-500 mt-1">
-          Tria una posició existent del magatzem. Cada posició només pot tenir una unitat.
-        </p>
-      </div>
+    <div>
+      <label class="block mb-1 text-sm font-medium">Posició magatzem (opcional)</label>
+      <input
+        type="text"
+        name="sububicacio"
+        list="llista-sububicacions"
+        class="w-full p-2 border rounded text-lg font-mono"
+        placeholder="Ex: 01A01 (o buit per posició neutra)"
+      >
+      <p class="text-xs text-gray-500 mt-1">
+        Tria una posició existent del magatzem. Cada posició només pot tenir una unitat.
+      </p>
+    </div>
 
-      <button type="submit"
-              class="bg-green-600 text-white px-4 py-3 rounded text-lg font-semibold w-full">
-        Registrar entrada
-      </button>
-    </form>
-  </div>
-
-
+    <button type="submit"
+            class="bg-green-600 text-white px-4 py-3 rounded text-lg font-semibold w-full">
+      Registrar entrada
+    </button>
+  </form>
+</div>
 
 <?php
 $content = ob_get_clean();
