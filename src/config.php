@@ -12,6 +12,8 @@ if (file_exists(__DIR__ . '/config.local.php')) {
     $pass   = 'Camises2025';
 }
 
+define('IMPORT_PASSWORD', 'Camises2025');
+
 try {
     $pdo = new PDO(
         "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
@@ -26,3 +28,6 @@ try {
     error_log('Error de connexió BD: ' . $e->getMessage());
     die('Error de connexió a la base de dades.');
 }
+
+
+

@@ -421,7 +421,7 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
     <?php endif;
 
     $content = ob_get_clean();
-    renderPage("Servir recanvi", $content, '', ['noSidebar' => true]);
+    renderOperariPage("PDA","Responsable", $content);
     exit;
 }
 ?>
