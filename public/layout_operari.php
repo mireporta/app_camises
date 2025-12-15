@@ -1,5 +1,5 @@
 <?php
-function renderOperariPage($title, $content) {
+function renderOperariPage($title, $subtitle, $content) {
 ?>
 <!DOCTYPE html>
 <html lang="ca">
@@ -13,7 +13,7 @@ function renderOperariPage($title, $content) {
 
   <header class="bg-gray-800 text-white p-4 flex justify-between items-center">
     <h1 class="text-xl font-semibold"><?= htmlspecialchars($title) ?></h1>
-    <span class="text-sm opacity-75">Pantalla Operari</span>
+    <span class="text-sm opacity-75"><?= htmlspecialchars($subtitle) ?></span>
   </header>
 
   <!-- Abans: min-h + p-20 (massa aire) -->

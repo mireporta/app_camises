@@ -1,6 +1,7 @@
 <?php
 require_once("../src/config.php");
-require_once("layout.php");
+require_once("layout_operari.php");
+
 
 // Sessió per poder guardar missatges entre peticions
 if (session_status() === PHP_SESSION_NONE) {
@@ -425,8 +426,6 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
 }
 ?>
 
-<h2 class="text-2xl font-bold mb-4">Mode PDA</h2>
-
 <?php if ($message): ?>
   <div class="mb-4 p-3 rounded text-sm
               <?= str_starts_with($message, '✅') || str_starts_with($message, '🟢') || str_starts_with($message, '🛑')
@@ -436,12 +435,12 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
   </div>
 <?php endif; ?>
 
-<div class="grid grid-cols-1 gap-8">
+<div class="mt-2 grid grid-cols-1 gap-6">
 
   <!-- 📋 PETICIONS DE MÀQUINES (PENDENTS, AMB BOTONS VERD/ROIG) -->
   <div class="bg-white p-4 rounded-lg shadow-md">
     <div class="flex justify-between items-center mb-3">
-      <h3 class="text-lg font-bold text-gray-700">📋 Peticions de màquines</h3>
+      <h3 class="text-lg font-bold text-gray-700">📋 Peticions de camises</h3>
       <span class="text-sm text-gray-500"><?= count($peticions) ?> pendents</span>
     </div>
 
@@ -499,7 +498,7 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
   <!-- 📦 Magatzem intermig (PDA friendly) -->
   <div class="bg-white p-4 rounded-lg shadow-md">
     <div class="flex justify-between items-center mb-3">
-      <h3 class="text-lg font-bold text-gray-700">🏭 Magatzem intermig</h3>
+      <h3 class="text-lg font-bold text-gray-700">📦 Magatzem intermig</h3>
       <span class="text-sm text-gray-500"><?= count($intermigItems) ?> pendents</span>
     </div>
 
@@ -570,7 +569,7 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
 </datalist>
 
 <!-- 🧾 Entrada manual (PDA friendly) -->
-<div class="bg-white p-4 rounded-lg shadow-md mt-8">
+<!-- <div class="bg-white p-4 rounded-lg shadow-md mt-8">
   <h3 class="text-lg font-bold mb-3 text-gray-700">📥 Entrada de recanvi nou</h3>
   <form method="POST" class="space-y-3">
     <input type="hidden" name="action" value="manual">
@@ -631,11 +630,12 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
       Registrar entrada
     </button>
   </form>
-</div>
+</div> -->
 
 <?php
 $content = ob_get_clean();
 
 // 👇 Passem l’opció noSidebar => true perquè el layout amagui el menú
-renderPage("Entrades PDA", $content, '', ['noSidebar' => true]);
+// renderPage("Entrades PDA", $content, '', ['noSidebar' => true]);
+renderOperariPage("PDA","Responsable", $content);
 ?>

@@ -60,7 +60,7 @@ if (!$maquinaActual) {
     </form>
     <?php
     $content = ob_get_clean();
-    renderOperariPage("Selecciona màquina", $content);
+    renderOperariPage("Selecciona màquina", "", $content);
     exit;
 }
 
@@ -481,16 +481,7 @@ ob_start();
   </div>
 <?php endif; ?>
 
-<p class="mb-2 text-sm text-gray-600 flex items-center justify-between">
-  <span>
-    Màquina actual: <span class="font-semibold"><?= htmlspecialchars($maquinaActual) ?></span>
-  </span>
 
-  <a href="operari.php?reset_maquina=1"
-     class="text-blue-600 text-xs underline hover:text-blue-800">
-    Canviar de màquina
-  </a>
-</p>
 
 
 
@@ -749,6 +740,14 @@ ob_start();
   </div>
 
 </div>
+<div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="lg:col-span-2 text-right">
+    <a href="operari.php?reset_maquina=1"
+       class="text-blue-600 text-xs underline hover:text-blue-800">
+      Canviar de màquina
+    </a>
+  </div>
+</div>
 
 
 <script>
@@ -813,5 +812,5 @@ ob_start();
 
 <?php
 $content = ob_get_clean();
-renderOperariPage("Pantalla Operari", $content);
+renderOperariPage("$maquinaActual", "Maquinista",$content);
 ?>
