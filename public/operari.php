@@ -458,6 +458,19 @@ if (!empty($maquinaActual)) {
     $unitatsPreparacio = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// 🔧 SKUs instal·lats a la màquina actual (només SKU)
+$stmt = $pdo->prepare("
+  SELECT DISTINCT i.sku
+  FROM item_units iu
+  JOIN items i ON i.id = iu.item_id
+  WHERE iu.estat='actiu'
+    AND iu.ubicacio='maquina'
+    AND iu.maquina_actual = ?
+  ORDER BY i.sku ASC
+");
+$stmt->execute([$maquinaActual]);
+$skusInstal·lats = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
 
 ob_start();
 ?>
@@ -478,6 +491,7 @@ ob_start();
     Canviar de màquina
   </a>
 </p>
+
 
 
 <div class="mt-2 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -583,51 +597,85 @@ ob_start();
 <!-- Bloc combinat: Recanvis pendents + Produccions recents -->
 <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-  <!-- 🧩 Columna 1: Instal·lar unitats en preparació -->
-  <div class="bg-white p-4 rounded shadow">
-    <h3 class="text-lg font-semibold mb-3">Recanvis pendents d’entrar</h3>
+  <!-- 🧩 Columna 1: Pendents + Instal·lats -->
+<div class="bg-white p-4 rounded shadow">
+  <h3 class="text-lg font-semibold mb-3">Recanvis</h3>
 
-    <?php if (empty($unitatsPreparacio)): ?>
-      <p class="text-sm text-gray-500">
-        No hi ha recanvis en preparació per a aquesta màquina.
-      </p>
-    <?php else: ?>
-      <form method="POST">
-        <input type="hidden" name="action" value="instal_lar">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        <table class="w-full text-sm border mb-3">
-          <thead>
-            <tr class="bg-gray-100">
-              <th class="border px-2 py-1 text-center w-10">✔</th>
-              <th class="border px-2 py-1 text-left">SKU</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach ($unitatsPreparacio as $u): ?>
-              <tr>
-                <td class="border px-2 py-1 text-center">
-                  <input
-                    type="checkbox"
-                    name="unit_ids[]"
-                    value="<?= (int)$u['id'] ?>"
-                    class="h-4 w-4"
-                  >
-                </td>
-                <td class="border px-2 py-1"><?= htmlspecialchars($u['sku']) ?></td>
+    <!-- ✅ Pendents d’entrar (PREPARACIÓ) -->
+    <div>
+      <h4 class="text-sm font-semibold text-gray-700 mb-2">Pendents d’entrar</h4>
+
+      <?php if (empty($unitatsPreparacio)): ?>
+        <p class="text-sm text-gray-500">
+          No hi ha recanvis en preparació per a aquesta màquina.
+        </p>
+      <?php else: ?>
+        <form method="POST">
+          <input type="hidden" name="action" value="instal_lar">
+
+          <table class="w-full text-sm border mb-3">
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="border px-2 py-1 text-center w-10">✔</th>
+                <th class="border px-2 py-1 text-left">SKU</th>
               </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              <?php foreach ($unitatsPreparacio as $u): ?>
+                <tr>
+                  <td class="border px-2 py-1 text-center">
+                    <input
+                      type="checkbox"
+                      name="unit_ids[]"
+                      value="<?= (int)$u['id'] ?>"
+                      class="h-4 w-4"
+                    >
+                  </td>
+                  <td class="border px-2 py-1"><?= htmlspecialchars($u['sku']) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
 
-        <div class="flex items-center justify-between">
           <button type="submit"
                   class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-700">
             Entrar recanvis
           </button>
-        </div>
-      </form>
-    <?php endif; ?>
+        </form>
+      <?php endif; ?>
+    </div>
+
+    <!-- 🧷 Instal·lats a màquina -->
+    <div>
+      <h4 class="text-sm font-semibold text-gray-700 mb-2">Instal·lats</h4>
+
+      <?php if (empty($skusInstal·lats)): ?>
+        <p class="text-sm text-gray-500">
+          No hi ha recanvis instal·lats en aquesta màquina.
+        </p>
+      <?php else: ?>
+        <table class="w-full text-sm border">
+          <thead>
+            <tr class="bg-gray-100">
+              <th class="border px-2 py-1 text-left">SKU</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($skusInstal·lats as $sku): ?>
+              <tr>
+                <td class="border px-2 py-1"><?= htmlspecialchars($sku) ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php endif; ?>
+    </div>
+
   </div>
+</div>
+
 
   <!-- 🧾 Columna 2: Produccions recents -->
   <div class="bg-white p-4 rounded shadow">
