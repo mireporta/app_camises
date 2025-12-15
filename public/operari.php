@@ -490,7 +490,7 @@ ob_start();
 
   <!-- 📥 FER PETICIÓ -->
   <div class="bg-white p-4 rounded shadow">
-    <h3 class="text-lg font-semibold mb-3">📥 Fer petició de camisa</h3>
+    <h3 class="text-lg font-semibold mb-3">📥 Demanar camisa</h3>
     <form method="POST" class="space-y-3">
       <input type="hidden" name="action" value="peticio">
       <input type="hidden" name="maquina" value="<?= htmlspecialchars($maquinaActual) ?>">
@@ -555,7 +555,7 @@ ob_start();
 
   <!-- ↩ RETORNAR UNITATS -->
   <div class="bg-white p-4 rounded shadow">
-    <h3 class="text-lg font-semibold mb-3">↩ Retornar recanvis de màquina</h3>
+    <h3 class="text-lg font-semibold mb-3">↩ Retornar camisa</h3>
     <form method="POST" class="space-y-3">
       <input type="hidden" name="action" value="retornar">
       <input type="hidden" name="maquina" value="<?= htmlspecialchars($maquinaActual) ?>">
@@ -578,7 +578,7 @@ ob_start();
       </div>
 
       <button type="submit" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 w-full">
-        Retornar al magatzem intermig
+        Retornar al magatzem
       </button>
     </form>
   </div>
@@ -590,7 +590,7 @@ ob_start();
 
   <!-- 🧩 Columna 1: Pendents + Instal·lats -->
 <div class="bg-white p-4 rounded shadow">
-  <h3 class="text-lg font-semibold mb-3">Recanvis</h3>
+  <h3 class="text-lg font-semibold mb-3">Camises</h3>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
@@ -640,7 +640,7 @@ ob_start();
 
     <!-- 🧷 Instal·lats a màquina -->
     <div>
-      <h4 class="text-sm font-semibold text-gray-700 mb-2">Instal·lats</h4>
+      <h4 class="text-sm font-semibold text-gray-700 mb-2">Produint</h4>
 
       <?php if (empty($skusInstal·lats)): ?>
         <p class="text-sm text-gray-500">
