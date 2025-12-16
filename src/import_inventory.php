@@ -149,6 +149,7 @@ try {
         $stmt = $pdo->prepare("SELECT id FROM items WHERE sku = ?");
         $stmt->execute([$sku]);
         $itemId = $stmt->fetchColumn();
+        
 
         if (!$itemId) {
             $errors[] = "Fila {$excelRowNumber}: SKU {$sku} no existeix.";
