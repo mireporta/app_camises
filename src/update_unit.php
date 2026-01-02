@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $stmt = $pdo->prepare("SELECT item_id, estat, ubicacio, maquina_baixa FROM item_units WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT item_id, ubicacio, sububicacio, maquina_actual FROM item_units WHERE id = ?");
         $stmt->execute([$id]);
         $unit = $stmt->fetch(PDO::FETCH_ASSOC);
 
