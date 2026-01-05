@@ -189,6 +189,9 @@ try {
             $excelRowNumber++;
             continue;
         }
+        if ($ubicacio === 'magatzem') {
+            $maquinaActual = null;
+        }
 
         // INSERT / UPDATE unitat (serial UNIQUE)
         $stmt = $pdo->prepare("

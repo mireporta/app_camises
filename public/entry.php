@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'accep
             if ($expected === '') {
                 $pdo->prepare("
                     UPDATE item_units
-                    SET ubicacio = 'magatzem', updated_at = NOW()
+                    SET ubicacio = 'magatzem',  maquina_actual = NULL, updated_at = NOW()
                     WHERE id = ?
                 ")->execute([$unitId]);
 
@@ -147,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'accep
                         // 4️⃣ Tot OK → Acceptem al magatzem
                         $pdo->prepare("
                             UPDATE item_units
-                            SET ubicacio = 'magatzem', updated_at = NOW()
+                            SET ubicacio = 'magatzem',  maquina_actual = NULL, updated_at = NOW()
                             WHERE id = ?
                         ")->execute([$unitId]);
 
