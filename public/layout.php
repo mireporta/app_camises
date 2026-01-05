@@ -91,7 +91,7 @@ function renderPage(string $title, string $content, string $extraScripts = '', a
       <a href="produccio_historial.php"   class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'produccio_historial.php' ? 'active' : '' ?>">📈 Historial producció</a>
       <a href="decommission.php"class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'decommission.php'? 'active' : '' ?>">🗑️ Baixes</a>
       <a href="operari.php"     class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'operari.php'    ? 'active' : '' ?>">🏭 Producció</a>
-
+      <a href="maintenance.php"     class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'maintenance.php'    ? 'active' : '' ?>">🛠️ Mateniment</a>
     </nav>
 
     <!-- Peu -->
