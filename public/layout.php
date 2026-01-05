@@ -73,7 +73,7 @@ function renderPage(string $title, string $content, string $extraScripts = '', a
     <!-- Navegació -->
     <nav class="flex-1 px-2.5 py-5 space-y-0.5 text-[15px]">
       <a href="dashboard.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'dashboard.php' ? 'active' : '' ?>">📊 Indicadors</a>
-      <a href="maquines.php"  class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'maquines.php'  ? 'active' : '' ?>">🛠️ Màquines</a>
+      <a href="maquines.php"  class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'maquines.php'  ? 'active' : '' ?>">⚙️ Màquines</a>
       <a href="inventory.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'inventory.php'? 'active' : '' ?>">📦 Inventari</a>
 
       <a href="entry.php" 
