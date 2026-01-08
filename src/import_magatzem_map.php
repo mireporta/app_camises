@@ -3,6 +3,9 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 session_start();
 
+use PhpOffice\PhpSpreadsheet\IOFactory;
+
+// 🔐 Validació contrasenya import
 $pwd = $_POST['import_password'] ?? '';
 if (!defined('IMPORT_PASSWORD') || $pwd !== IMPORT_PASSWORD) {
     $_SESSION['map_message'] = "❌ Contrasenya d'importació incorrecta.";
@@ -10,9 +13,6 @@ if (!defined('IMPORT_PASSWORD') || $pwd !== IMPORT_PASSWORD) {
     header("Location: ../public/magatzem_map.php");
     exit;
 }
-
-
-use PhpOffice\PhpSpreadsheet\IOFactory;
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     $_SESSION['map_message'] = "❌ Accés no permès.";
@@ -39,41 +39,57 @@ try {
         throw new Exception("El fitxer està buit o no té dades.");
     }
 
-// Capçalera (manté això)
-$headerRow = array_shift($rows);
-$header = array_map(fn($h) => strtolower(trim((string)$h)), $headerRow);
+    // ✅ Inicialitzacions (faltaven)
+    $errors = [];
+    $importats = 0;
 
-// IMPORTANT: idxPos i idxSer seran 'A', 'B', ...
-$colPos = array_search('posicio', $header, true);
-$colSer = array_search('serial', $header, true);
+    // Capçalera
+    $headerRow = array_shift($rows);
+    $header = array_map(fn($h) => strtolower(trim((string)$h)), $headerRow);
 
-if ($colPos === false || $colSer === false) {
-    throw new Exception("Capçalera incorrecta. Calen columnes: posicio, serial (sku opcional).");
-}
+    // IMPORTANT: AQUESTS VALORS SERAN 'A','B','C'...
+    $colPos = array_search('posicio', $header, true);
+    $colSer = array_search('serial', $header, true);
 
-$excelRow = 2;
-
-foreach ($rows as $row) {
-    // Ignora files buides
-    $rowValues = array_map(fn($v) => trim((string)$v), $row);
-    $isEmpty = true;
-    foreach ($rowValues as $v) { if ($v !== '') { $isEmpty = false; break; } }
-    if ($isEmpty) { $excelRow++; continue; }
-
-    // ✅ Llegim per lletra de columna (A/B/C...)
-    $posicio = trim((string)($row[$colPos] ?? ''));
-    $serial  = trim((string)($row[$colSer] ?? ''));
-
-    // Treure BOM si hi és
-    $posicio = preg_replace('/^\xEF\xBB\xBF/', '', $posicio);
-
-    if ($posicio === '' || $serial === '') {
-        $errors[] = "Fila {$excelRow}: cal posicio i serial.";
-        $excelRow++;
-        continue;
+    if ($colPos === false || $colSer === false) {
+        throw new Exception("Capçalera incorrecta. Calen columnes: posicio, serial (sku opcional).");
     }
 
-        // 1) posició existeix
+    // ✅ Comencem transacció (faltava)
+    $pdo->beginTransaction();
+
+    $excelRow = 2;
+
+    foreach ($rows as $row) {
+        // Ignora files completament buides
+        $isEmpty = true;
+        foreach ($row as $v) {
+            if (trim((string)$v) !== '') { $isEmpty = false; break; }
+        }
+        if ($isEmpty) { $excelRow++; continue; }
+
+        // Llegim per lletra de columna (A/B/C...)
+        $posicio = trim((string)($row[$colPos] ?? ''));
+        $serial  = trim((string)($row[$colSer] ?? ''));
+
+        // Treure BOM si hi és
+        $posicio = preg_replace('/^\xEF\xBB\xBF/', '', $posicio);
+
+        // Si la fila no té posició, és una fila dolenta -> error
+        if ($posicio === '') {
+            $errors[] = "Fila {$excelRow}: cal posicio.";
+            $excelRow++;
+            continue;
+        }
+
+        // ✅ Si NO hi ha serial -> és una posició buida -> la saltem (NO és error)
+        if ($serial === '') {
+            $excelRow++;
+            continue;
+        }
+
+
+        // 1) Validar que la posició existeix
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
         $stmt->execute([$posicio]);
         if ((int)$stmt->fetchColumn() === 0) {
@@ -82,7 +98,7 @@ foreach ($rows as $row) {
             continue;
         }
 
-        // 2) unitat activa pel serial
+        // 2) Trobar unitat activa pel serial
         $stmt = $pdo->prepare("SELECT id FROM item_units WHERE serial = ? AND estat='actiu'");
         $stmt->execute([$serial]);
         $unitId = (int)$stmt->fetchColumn();
@@ -93,10 +109,10 @@ foreach ($rows as $row) {
             continue;
         }
 
-        // 3) posició no ocupada per una altra unitat activa
+        // 3) Validar que la posició no està ocupada per una altra unitat activa
         $stmt = $pdo->prepare("
-            SELECT COUNT(*) 
-            FROM item_units 
+            SELECT COUNT(*)
+            FROM item_units
             WHERE sububicacio = ? AND estat='actiu' AND id <> ?
         ");
         $stmt->execute([$posicio, $unitId]);
@@ -106,7 +122,7 @@ foreach ($rows as $row) {
             continue;
         }
 
-        // 4) assignar posició i forçar ubicació=magatzem
+        // 4) Assignar posició a la unitat i forçar ubicacio=magatzem
         $stmt = $pdo->prepare("
             UPDATE item_units
             SET sububicacio = ?, ubicacio='magatzem', updated_at = NOW()
@@ -118,7 +134,7 @@ foreach ($rows as $row) {
         $excelRow++;
     }
 
-    if ($errors) {
+    if (!empty($errors)) {
         $pdo->rollBack();
         throw new Exception("Errors trobats:\n" . implode("\n", $errors));
     }
@@ -129,7 +145,9 @@ foreach ($rows as $row) {
     $_SESSION['map_message_type'] = "success";
 
 } catch (Throwable $e) {
-    if ($pdo->inTransaction()) $pdo->rollBack();
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     $_SESSION['map_message'] = "❌ Import fallit:\n" . $e->getMessage();
     $_SESSION['map_message_type'] = "error";
 }

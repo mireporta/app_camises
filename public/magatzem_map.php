@@ -158,7 +158,7 @@ ob_start();
       }
     ?>
 
-    <details class="mb-6 bg-white rounded-lg shadow" <?= $clau === $primerClau ? 'open' : '' ?>>
+    <details class="mb-6 bg-white rounded-lg shadow" <?= $clau === $primerClau ? 'closed' : '' ?>>
       <summary class="cursor-pointer px-4 py-2 flex items-center justify-between">
         <span class="font-semibold text-gray-700">
           Prestatgeria <?= htmlspecialchars($clau) ?>
@@ -177,7 +177,7 @@ ob_start();
               <?= $filaKey === 'Altres' ? 'Altres posicions' : ('Fila ' . $filaKey) ?>
             </p>
 
-            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:[grid-template-columns:repeat(13,minmax(0,1fr))] gap-2">
               <?php foreach ($files[$filaKey] as $p):
                 $ocupada = !empty($p['unit_id']);
                 $vidaPercent = null;
