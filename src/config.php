@@ -1,18 +1,22 @@
 <?php
 // src/config.php
 
-// Si existeix config.local.php, vol dir que som en local
+// Valors per defecte (safe, per no petar si falta el local)
+$host   = 'localhost';
+$dbname = 'inventari_camises_v2';
+$user   = 'root';
+$pass   = '';
+
+// Si existeix config.local.php, el carreguem
 if (file_exists(__DIR__ . '/config.local.php')) {
     require __DIR__ . '/config.local.php';
-} else {
-    // Configuració per DEFECTE (servidor)
-    $host   = 'localhost';
-    $dbname = 'inventari_camises_v2';
-    $user   = 'hamelin';
-    $pass   = 'Camises2025';
 }
 
-define('IMPORT_PASSWORD', 'Camises2025');
+
+// Password d'import (si no ve del local)
+if (!defined('IMPORT_PASSWORD')) {
+    define('IMPORT_PASSWORD', 'Camises2025');
+}
 
 try {
     $pdo = new PDO(
@@ -28,6 +32,3 @@ try {
     error_log('Error de connexió BD: ' . $e->getMessage());
     die('Error de connexió a la base de dades.');
 }
-
-
-
