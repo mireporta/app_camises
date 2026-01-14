@@ -1,6 +1,8 @@
 <?php
 require_once("../src/config.php");
 require_once("layout.php");
+require_once("../src/new_entry.php");
+
 
 $message = "";
 
@@ -13,6 +15,7 @@ $allPositions = $pdo->query("
 
 /* 🧾 1️⃣ Registrar entrada manual (compra o proveïdor) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manual') {
+
     $sku         = trim($_POST['sku'] ?? '');
     $serial      = trim($_POST['serial'] ?? '');
     $sububicacio = trim($_POST['sububicacio'] ?? '');
@@ -26,25 +29,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manua
         $message = "⚠️ Cal omplir SKU i Serial.";
     }
 
-    // ✅ Validació de posició si s'ha informat
+    // ✅ Validació de posició si s'ha informat (existència)
+    // (La comprovació d'ocupació la farà newEntry() mirant magatzem_posicions)
     if ($message === "" && $sububicacio !== '') {
-        // 1) Ha d'existir a magatzem_posicions
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
         $stmt->execute([$sububicacio]);
-        if ($stmt->fetchColumn() == 0) {
+        if ((int)$stmt->fetchColumn() === 0) {
             $message = "❌ La posició '$sububicacio' no existeix al magatzem.";
-        } else {
-            // 2) No la pot estar usant cap altra unitat activa
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM item_units WHERE sububicacio = ? AND estat = 'actiu'");
-            $stmt->execute([$sububicacio]);
-            if ($stmt->fetchColumn() > 0) {
-                $message = "❌ La posició '$sububicacio' ja està ocupada per un altre recanvi.";
-            }
         }
     }
-    
+
     if ($message === "" && $sku && $serial) {
-        // busquem si ja existeix l'item
+
+        // 1) Busquem si ja existeix l'item
         $stmt = $pdo->prepare("SELECT id FROM items WHERE sku = ?");
         $stmt->execute([$sku]);
         $item = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -52,42 +49,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manua
         if (!$item) {
             // ➕ Nou item
             $pdo->prepare("
-                INSERT INTO items (sku, category, min_stock, active, created_at)
-                VALUES (?, ?, 0, 1, NOW())
-            ")->execute([$sku, $categoria]);
+                INSERT INTO items (sku, category, min_stock, vida_total_default, active, created_at)
+                VALUES (?, ?, 0, ?, 1, NOW())
+            ")->execute([$sku, $categoria, $vida_total]);
+
             $itemId = (int)$pdo->lastInsertId();
+
         } else {
             $itemId = (int)$item['id'];
-            if ($categoria) {
-                $pdo->prepare("UPDATE items SET category = ? WHERE id = ?")
-                    ->execute([$categoria, $itemId]);
-            }
+
+        // Actualitza categoria si ve informada
+        if ($categoria) {
+            $pdo->prepare("UPDATE items SET category = ? WHERE id = ?")
+                ->execute([$categoria, $itemId]);
         }
 
-        // Comprovem que no existeixi el serial
-        $check = $pdo->prepare("SELECT COUNT(*) FROM item_units WHERE serial = ?");
-        $check->execute([$serial]);
-        if ($check->fetchColumn() > 0) {
-            $message = "⚠️ Ja existeix una unitat amb el serial $serial.";
+        // ✅ Actualitza vida_total_default si l'usuari ha informat vida_total (>0)
+        if ($vida_total > 0) {
+            $pdo->prepare("UPDATE items SET vida_total_default = ? WHERE id = ?")
+                ->execute([$vida_total, $itemId]);
+        }
+    }
+
+
+        // 2) Registrar entrada (unitat + posició + moviment + stock)
+        $result = newEntry(
+            $pdo,
+            $itemId,
+            $serial,
+            $sububicacio !== '' ? $sububicacio : null,
+            $origen,
+            $vida_total,
+            null // no ve de compra
+        );
+
+        if (!$result['ok']) {
+            $message = $result['error'];
         } else {
-            // Creem la unitat
-            $pdo->prepare("
-                INSERT INTO item_units (item_id, serial, ubicacio, sububicacio, estat, vida_utilitzada, vida_total, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'actiu', 0, ?, NOW(), NOW())
-            ")->execute([$itemId, $serial, 'magatzem', $sububicacio !== '' ? $sububicacio : null, $vida_total]);
-
-            // Registrem moviment d'entrada
-            $pdo->prepare("
-                INSERT INTO moviments (item_id, item_unit_id, tipus, quantitat, ubicacio, maquina, created_at)
-                SELECT ?, id, 'entrada', 1, ?, ?, NOW()
-                FROM item_units
-                WHERE serial = ?
-            ")->execute([$itemId, 'magatzem', $origen, $serial]);
-
             $message = "✅ Entrada registrada correctament ($serial a $ubicacio).";
         }
     }
 }
+
 
 /* ✅ 2️⃣ Acceptar recanvi del magatzem intermig (amb escaneig) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'acceptar_intermig') {
