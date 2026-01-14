@@ -376,6 +376,7 @@ ob_start();
               <th class="px-3 py-2">Entrada</th>
               <th class="px-3 py-2">Pendent</th>
               <th class="px-3 py-2">Proveïdor</th>
+              <th class="px-3 py-2">Notes</th>
               <th class="px-3 py-2 text-center">Acció</th>
             </tr>
           </thead>
@@ -402,6 +403,7 @@ ob_start();
                 </td>
 
                 <td class="px-3 py-2"><?= htmlspecialchars($p['proveidor']) ?></td>
+                <td class="px-3 py-2"><?= htmlspecialchars($p['notes']) ?></td>
 
                 <td class="px-3 py-2 text-center">
                   <?php if ($pendent > 0): ?>
