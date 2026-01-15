@@ -10,12 +10,11 @@ $stmt = $pdo->query("
       mp.codi AS posicio,
       iu.serial,
       i.sku
-    FROM magatzem_posicions mp
-    LEFT JOIN item_units iu
-      ON iu.sububicacio = mp.codi
-     AND iu.estat = 'actiu'
-    LEFT JOIN items i
-      ON i.id = iu.item_id
+      FROM magatzem_posicions mp
+      LEFT JOIN item_units iu
+        ON iu.id = mp.item_unit_id
+      LEFT JOIN items i
+        ON i.id = iu.item_id
     ORDER BY mp.codi ASC
 ");
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

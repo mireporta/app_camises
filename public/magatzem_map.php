@@ -24,14 +24,17 @@ $sql = "
       iu.id    AS unit_id,
       i.sku,
       iu.serial,
+      iu.estat,
+      iu.baixa_motiu,
       iu.vida_utilitzada,
       iu.vida_total
     FROM magatzem_posicions mp
     LEFT JOIN item_units iu
-      ON iu.sububicacio = mp.codi
-     AND iu.estat = 'actiu'
+      ON iu.id = mp.item_unit_id
     LEFT JOIN items i
       ON i.id = iu.item_id
+
+
 ";
 if ($onlyOccupied) {
     $sql .= " WHERE iu.id IS NOT NULL ";
@@ -189,8 +192,16 @@ ob_start();
                     $vidaPercent = max(0, 100 - (int)floor(100 * $vidaUsada / $vidaTotal));
                 }
               ?>
-                <div class="border rounded-lg p-2 text-xs
-                            <?= $ocupada ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-200' ?>">
+                <?php
+                  $ocupada = !empty($p['unit_id']);
+                  $estat = (string)($p['estat'] ?? '');
+                  $isInactive = $ocupada && $estat !== 'actiu';
+                  $boxClass = 'bg-gray-50 border-gray-200';
+                  if ($ocupada && !$isInactive) $boxClass = 'bg-green-50 border-green-300';          // actiu
+                  if ($isInactive) $boxClass = 'bg-orange-50 border-orange-300';                     // inactiu
+                ?>
+                <div class="border rounded-lg p-2 text-xs <?= $boxClass ?>">
+
                   <div class="font-mono font-semibold text-gray-800 mb-1">
                     <?= htmlspecialchars($p['posicio']) ?>
                   </div>

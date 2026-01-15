@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/warehouse_positions.php';
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = (int)($_POST['id'] ?? 0);
@@ -32,10 +34,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // ✅ Validar que no està ocupada per una altra unitat
         $stmtOcc = $pdo->prepare("
-            SELECT COUNT(*) 
-            FROM item_units 
-            WHERE sububicacio = ? AND id <> ?
+            SELECT item_unit_id FROM magatzem_posicions
+            WHERE codi = ?
         ");
+        $stmtOcc->execute([$nova_sububicacio]);
+        $row = $stmtOcc->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            echo "❌ Error: La posició '$nova_sububicacio' no existeix al magatzem.";
+            exit;
+        }
+        if ($row['item_unit_id'] !== null && (int)$row['item_unit_id'] !== $id) {
+            echo "❌ Error: La posició '$nova_sububicacio' ja està ocupada.";
+            exit;
+        }
+
         $stmtOcc->execute([$nova_sububicacio, $id]);
         if ($stmtOcc->fetchColumn() > 0) {
             echo "❌ Error: La posició '$nova_sububicacio' ja està ocupada.";
@@ -66,18 +78,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
 
         // Actualitzar la unitat a activa
+        // 1) Ocupa posició i sincronitza (magatzem_posicions + item_units.sububicacio)
+        $res = setUnitPosition($pdo, $id, $nova_sububicacio);
+        if (!$res['ok']) {
+            echo $res['error'] ?? "❌ Error ocupant la posició.";
+            exit;
+        }
+
+        // 2) Restaura estat/ubicacio
         $pdo->prepare("
             UPDATE item_units
             SET estat = 'actiu',
+                baixa_motiu = NULL,
+                maquina_baixa = NULL,
                 ubicacio = 'magatzem',
-                sububicacio = :sub,
                 maquina_actual = NULL,
                 updated_at = NOW()
             WHERE id = :id
         ")->execute([
-            ':sub' => $nova_sububicacio,
-            ':id'  => $id
+            ':id' => $id
         ]);
+
 
         header("Location: ../public/inventory.php?msg=unit_restored");
         exit;
@@ -115,8 +136,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $unit['maquina_actual'] ?? null,
                 $motiu
             ]);
-
+            // ✅ Regla: només alliberem posició si la baixa NO és "descatalogat"
+            if (strtolower($motiu) !== 'descatalogat') {
+                freePositionByUnit($pdo, $id);
+            }
             // Actualitzar estat i netejar camps
+            if (strtolower($motiu) === 'descatalogat') {
+            // ❗ Descatalogat: NO alliberem i NO toquem sububicacio (posició queda ocupada)
+            $pdo->prepare("
+                UPDATE item_units
+                SET estat = 'inactiu',
+                    baixa_motiu = :motiu,
+                    maquina_baixa = :maquina_baixa,
+                    maquina_actual = NULL,
+                    ubicacio = 'baixa',
+                    updated_at = NOW()
+                WHERE id = :id
+            ")->execute([
+                ':motiu'         => $motiu,
+                ':maquina_baixa' => $unit['maquina_actual'],
+                ':id'            => $id
+            ]);
+        } else {
+            // ✅ Baixa normal: alliberem i netegem sububicacio
             $pdo->prepare("
                 UPDATE item_units
                 SET estat = 'inactiu',
@@ -134,6 +176,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
 
+        }
+
         header("Location: ../public/inventory.php?msg=unit_baixa");
         exit;
     }
@@ -149,34 +193,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
      * - Si ve amb valor → validem contra magatzem_posicions i que no estigui ocupada.
      */
     if ($sububicacio_raw !== null) {
+        // Llegim estat/baixa_motiu per aplicar regla descatalogat
+        $st = $pdo->prepare("SELECT estat, baixa_motiu FROM item_units WHERE id = ?");
+        $st->execute([$id]);
+        $cur = $st->fetch(PDO::FETCH_ASSOC) ?: ['estat' => null, 'baixa_motiu' => null];
+
         if ($sububicacio === '') {
-            // Posició neutra
+            // Volen treure posició
+            if ($cur['estat'] === 'inactiu' && strtolower((string)$cur['baixa_motiu']) === 'descatalogat') {
+                echo "❌ No es pot alliberar la posició: la unitat està descatalogada (posició ha de quedar ocupada).";
+                exit;
+            }
+
+            freePositionByUnit($pdo, $id);
             $fields[] = "sububicacio = NULL";
         } else {
-            // 1) Existeix al magatzem
-            $stmtPos = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
-            $stmtPos->execute([$sububicacio]);
-            if ($stmtPos->fetchColumn() == 0) {
-                echo "❌ Error: La posició '$sububicacio' no existeix al magatzem.";
+            // Volen posar/canviar posició: fem-ho via helper (sincronitza map + unitat)
+            $res = setUnitPosition($pdo, $id, $sububicacio);
+            if (!$res['ok']) {
+                echo $res['error'] ?? "❌ Error assignant la posició.";
                 exit;
             }
-
-            // 2) No està ocupada per una altra unitat
-            $stmtOcc = $pdo->prepare("
-                SELECT COUNT(*) 
-                FROM item_units 
-                WHERE sububicacio = ? AND id <> ?
-            ");
-            $stmtOcc->execute([$sububicacio, $id]);
-            if ($stmtOcc->fetchColumn() > 0) {
-                echo "❌ Error: La posició '$sububicacio' ja està ocupada.";
-                exit;
-            }
-
-            $fields[] = "sububicacio = ?";
-            $params[] = $sububicacio;
+            // opcional però recomanable: si té posició, és magatzem
+            $fields[] = "ubicacio = 'magatzem'";
         }
     }
+
 
     if ($vida_total !== null) {
         $fields[] = "vida_total = ?";

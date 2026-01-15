@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/warehouse_positions.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -171,16 +172,22 @@ try {
                 continue;
             }
 
-            $stmt = $pdo->prepare("
-                SELECT COUNT(*) FROM item_units
-                WHERE sububicacio = ? AND estat = 'actiu' AND serial <> ?
-            ");
-            $stmt->execute([$sububicacio, $serial]);
-            if ((int)$stmt->fetchColumn() > 0) {
-                $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} ja ocupada.";
-                $excelRowNumber++;
-                continue;
+            $stmt = $pdo->prepare("SELECT item_unit_id FROM magatzem_posicions WHERE codi = ?");
+            $stmt->execute([$sububicacio]);
+            $occ = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$occ) {
+                $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} no existeix.";
+            } else {
+                $occId = $occ['item_unit_id'];
+                // si està ocupada per una altra unitat → error (inclou descatalogats)
+                if ($occId !== null) {
+                    // si estàs important una línia del mateix serial i ja té aquesta posició, això requereix saber unit_id.
+                    // mantenim simple: si hi ha algú ocupant, no deixem assignar.
+                    $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} ja ocupada.";
+                }
             }
+
         }
 
         // ✅ Si és màquina o preparació, cal maquina_actual
@@ -244,6 +251,28 @@ try {
     if (!empty($errors)) {
         throw new Exception("Errors trobats:\n" . implode("\n", $errors));
     }
+
+    // ✅ RESYNC final: magatzem_posicions.item_unit_id reflecteix item_units.sububicacio
+    // Regla: ocupem si (estat actiu) o (estat inactiu + baixa_motiu=descatalogat), i ubicacio=magatzem
+    $pdo->exec("UPDATE magatzem_posicions SET item_unit_id = NULL");
+
+    $pdo->exec("
+        UPDATE magatzem_posicions mp
+        JOIN (
+            SELECT
+                sububicacio,
+                MAX(CASE WHEN estat='actiu' THEN id ELSE 0 END) AS active_id,
+                MAX(CASE WHEN estat='inactiu' AND LOWER(baixa_motiu)='descatalogat' THEN id ELSE 0 END) AS desc_id
+            FROM item_units
+            WHERE ubicacio='magatzem' AND sububicacio IS NOT NULL AND sububicacio <> ''
+            GROUP BY sububicacio
+        ) x ON x.sububicacio = mp.codi
+        SET mp.item_unit_id = CASE
+            WHEN x.active_id <> 0 THEN x.active_id
+            ELSE x.desc_id
+        END
+    ");
+
 
     $pdo->commit();
 

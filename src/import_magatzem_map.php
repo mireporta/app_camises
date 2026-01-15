@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/warehouse_positions.php';
 require_once __DIR__ . '/../vendor/autoload.php';
+
+
 session_start();
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -109,26 +112,42 @@ try {
             continue;
         }
 
-        // 3) Validar que la posició no està ocupada per una altra unitat activa
+        // 3) Validar que la posició no està ocupada (via mapa real: inclou descatalogats)
         $stmt = $pdo->prepare("
-            SELECT COUNT(*)
-            FROM item_units
-            WHERE sububicacio = ? AND estat='actiu' AND id <> ?
+            SELECT item_unit_id
+            FROM magatzem_posicions
+            WHERE codi = ?
+            LIMIT 1
         ");
-        $stmt->execute([$posicio, $unitId]);
-        if ((int)$stmt->fetchColumn() > 0) {
+        $stmt->execute([$posicio]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            $errors[] = "Fila {$excelRow}: la posició '{$posicio}' no existeix al magatzem.";
+            $excelRow++;
+            continue;
+        }
+
+        $ocupantId = $row['item_unit_id']; // pot ser NULL
+        if ($ocupantId !== null && (int)$ocupantId !== (int)$unitId) {
             $errors[] = "Fila {$excelRow}: la posició '{$posicio}' ja està ocupada per una altra unitat.";
             $excelRow++;
             continue;
         }
 
-        // 4) Assignar posició a la unitat i forçar ubicacio=magatzem
-        $stmt = $pdo->prepare("
-            UPDATE item_units
-            SET sububicacio = ?, ubicacio='magatzem', updated_at = NOW()
-            WHERE id = ?
-        ");
-        $stmt->execute([$posicio, $unitId]);
+
+        // 4) Assignar posició a la unitat via helper (sincronitza map + unitat)
+        $res = setUnitPosition($pdo, $unitId, $posicio);
+        if (!$res['ok']) {
+            $errors[] = "Fila {$excelRow}: " . ($res['error'] ?? "Error assignant posició.");
+            $excelRow++;
+            continue;
+        }
+
+        // Forcem ubicacio=magatzem (per coherència)
+        $pdo->prepare("UPDATE item_units SET ubicacio='magatzem', updated_at = NOW() WHERE id = ?")
+            ->execute([$unitId]);
+
 
         $importats++;
         $excelRow++;

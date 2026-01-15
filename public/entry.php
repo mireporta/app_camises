@@ -1,5 +1,6 @@
 <?php
 require_once("../src/config.php");
+require_once("../src/warehouse_positions.php");
 require_once("layout.php");
 require_once("../src/new_entry.php");
 
@@ -180,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'baixa
     } elseif ($unitId > 0) {
 
         // 1️⃣ Obtenir dades actuals
-        $stmt = $pdo->prepare("SELECT item_id, ubicacio, maquina_actual FROM item_units WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT item_id, ubicacio, maquina_actual, sububicacio FROM item_units WHERE id = ?");
         $stmt->execute([$unitId]);
         $unit = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -198,21 +199,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'baixa
             ]);
 
             // 3️⃣ Actualitzar unitat
-            $pdo->prepare("
-                UPDATE item_units
-                SET estat = 'inactiu',
-                    baixa_motiu = :motiu,
-                    maquina_baixa = :maquina_baixa,
-                    maquina_actual = NULL,
-                    ubicacio = 'baixa',
-                    sububicacio = NULL,
-                    updated_at = NOW()
-                WHERE id = :id
-            ")->execute([
-                ':motiu'         => $motiu,
-                ':maquina_baixa' => $unit['maquina_actual'],
-                ':id'            => $unitId
-            ]);
+            $pdo->beginTransaction();
+
+            try {
+                if (strtolower($motiu) !== 'descatalogat') {
+                    // ✅ Baixa normal: alliberem posició (si en té)
+                    freePositionByUnit($pdo, $unitId);
+
+                    $pdo->prepare("
+                        UPDATE item_units
+                        SET estat = 'inactiu',
+                            baixa_motiu = :motiu,
+                            maquina_baixa = :maquina_baixa,
+                            maquina_actual = NULL,
+                            ubicacio = 'baixa',
+                            sububicacio = NULL,
+                            updated_at = NOW()
+                        WHERE id = :id
+                    ")->execute([
+                        ':motiu'         => $motiu,
+                        ':maquina_baixa' => $unit['maquina_actual'],
+                        ':id'            => $unitId
+                    ]);
+                } else {
+                    // ❗ Descatalogat: NO alliberem i NO toquem sububicacio
+                    $pdo->prepare("
+                        UPDATE item_units
+                        SET estat = 'inactiu',
+                            baixa_motiu = :motiu,
+                            maquina_baixa = :maquina_baixa,
+                            maquina_actual = NULL,
+                            ubicacio = 'baixa',
+                            updated_at = NOW()
+                        WHERE id = :id
+                    ")->execute([
+                        ':motiu'         => $motiu,
+                        ':maquina_baixa' => $unit['maquina_actual'],
+                        ':id'            => $unitId
+                    ]);
+                }
+
+                $pdo->commit();
+                $message = "🗑️ Recanvi donat de baixa correctament.";
+            } catch (Throwable $e) {
+                $pdo->rollBack();
+                $message = "❌ Error donant de baixa: " . $e->getMessage();
+            }
+
 
             $message = "🗑️ Recanvi donat de baixa correctament.";
         } else {
