@@ -1,3 +1,5 @@
+
+
 <?php
 /**
  * Registrar entrada d'una unitat al magatzem

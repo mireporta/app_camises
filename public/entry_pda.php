@@ -435,6 +435,14 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
   </div>
 <?php endif; ?>
 
+<div class="mb-10">
+<a href="reception_pda.php"
+   class="font-semibold px-3 py-2 rounded bg-orange-400 text-white text-sm mb-10">
+  Recepció
+</a>
+</div>
+<h2 class="text-2xl font-bold mb-4">Peticions producció</h2>
+
 <div class="mt-2 grid grid-cols-1 gap-6">
 
   <!-- 📋 PETICIONS DE MÀQUINES (PENDENTS, AMB BOTONS VERD/ROIG) -->
@@ -567,70 +575,6 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
     <option value="<?= htmlspecialchars($pos) ?>"></option>
   <?php endforeach; ?>
 </datalist>
-
-<!-- 🧾 Entrada manual (PDA friendly) -->
-<!-- <div class="bg-white p-4 rounded-lg shadow-md mt-8">
-  <h3 class="text-lg font-bold mb-3 text-gray-700">📥 Entrada de recanvi nou</h3>
-  <form method="POST" class="space-y-3">
-    <input type="hidden" name="action" value="manual">
-
-    <div>
-      <label class="block mb-1 text-sm font-medium">Codi camisa (SKU)</label>
-      <input type="text" name="sku" required
-             class="w-full p-2 border rounded text-lg"
-             placeholder="Ex: ENRE001">
-    </div>
-
-    <div>
-      <label class="block mb-1 text-sm font-medium">Codi sèrie (Serial)</label>
-      <input type="text" name="serial" required
-             class="w-full p-2 border rounded text-lg"
-             placeholder="Ex: ENRE001.01">
-    </div>
-
-    <div>
-      <label class="block mb-1 text-sm font-medium">Categoria</label>
-      <input type="text" name="categoria"
-             class="w-full p-2 border rounded text-lg"
-             placeholder="Ex: A4 / A5 / A4+">
-    </div>
-
-    <div>
-      <label class="block mb-1 text-sm font-medium">Vida útil total (hores o cicles)</label>
-      <input type="number" name="vida_total" min="1"
-             class="w-full p-2 border rounded text-lg"
-             placeholder="Ex: 200">
-    </div>
-
-    <div>
-      <label class="block mb-1 text-sm font-medium">Proveïdor</label>
-      <input type="text"
-             name="proveidor"
-             class="w-full p-2 border rounded text-lg"
-             placeholder="Ex: Proveïdor X / Empresa X"
-             required>
-    </div>
-
-    <div>
-      <label class="block mb-1 text-sm font-medium">Posició magatzem (opcional)</label>
-      <input
-        type="text"
-        name="sububicacio"
-        list="llista-sububicacions"
-        class="w-full p-2 border rounded text-lg font-mono"
-        placeholder="Ex: 01A01 (o buit per posició neutra)"
-      >
-      <p class="text-xs text-gray-500 mt-1">
-        Tria una posició existent del magatzem. Cada posició només pot tenir una unitat.
-      </p>
-    </div>
-
-    <button type="submit"
-            class="bg-green-600 text-white px-4 py-3 rounded text-lg font-semibold w-full">
-      Registrar entrada
-    </button>
-  </form>
-</div> -->
 
 <?php
 $content = ob_get_clean();
