@@ -3,6 +3,9 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/warehouse_positions.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
+// IMPORTANT: Les posicions s'apliquen en dues fases (swap-friendly).
+// La veritat és magatzem_posicions.item_unit_id. Descatalogats bloquegen posició.
+
 
 session_start();
 
@@ -63,6 +66,12 @@ try {
 
     $excelRow = 2;
 
+    $desiredPosByUnit = [];
+    $desiredUnitByPos = [];
+    $incomingUnitIds  = [];
+    $warnings         = [];
+
+
     foreach ($rows as $row) {
         // Ignora files completament buides
         $isEmpty = true;
@@ -101,62 +110,112 @@ try {
             continue;
         }
 
-        // 2) Trobar unitat activa pel serial
-        $stmt = $pdo->prepare("SELECT id FROM item_units WHERE serial = ? AND estat='actiu'");
+        // 2) Trobar unitat pel serial
+        $stmt = $pdo->prepare("SELECT id, estat, baixa_motiu FROM item_units WHERE serial = ? LIMIT 1");
         $stmt->execute([$serial]);
-        $unitId = (int)$stmt->fetchColumn();
+        $urow = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($unitId <= 0) {
-            $errors[] = "Fila {$excelRow}: no s'ha trobat cap unitat activa amb serial '{$serial}'.";
+        if (!$urow) {
+            $errors[] = "Fila {$excelRow}: no s'ha trobat cap unitat amb serial '{$serial}'.";
             $excelRow++;
             continue;
         }
 
-        // 3) Validar que la posició no està ocupada (via mapa real: inclou descatalogats)
-        $stmt = $pdo->prepare("
-            SELECT item_unit_id
-            FROM magatzem_posicions
-            WHERE codi = ?
-            LIMIT 1
-        ");
-        $stmt->execute([$posicio]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $unitId = (int)$urow['id'];
 
-        if (!$row) {
-            $errors[] = "Fila {$excelRow}: la posició '{$posicio}' no existeix al magatzem.";
+        // 3) Guardar intenció (swap-friendly; s'aplicarà al final)
+        $desiredPosByUnit[(int)$unitId] = $posicio;
+        $incomingUnitIds[(int)$unitId] = true;
+
+        // Duplicats dins del mateix Excel
+        if (isset($desiredUnitByPos[$posicio]) && (int)$desiredUnitByPos[$posicio] !== (int)$unitId) {
+            $errors[] = "Fila {$excelRow}: la posició '{$posicio}' està repetida a l'Excel (unitats {$desiredUnitByPos[$posicio]} i {$unitId}).";
             $excelRow++;
             continue;
         }
+        $desiredUnitByPos[$posicio] = (int)$unitId;
 
-        $ocupantId = $row['item_unit_id']; // pot ser NULL
-        if ($ocupantId !== null && (int)$ocupantId !== (int)$unitId) {
-            $errors[] = "Fila {$excelRow}: la posició '{$posicio}' ja està ocupada per una altra unitat.";
+
+        // 4) Guardar intenció (s'aplicarà al final per permetre swaps)
+        $desiredPosByUnit[(int)$unitId] = $posicio;
+        $incomingUnitIds[(int)$unitId] = true;
+
+        // Duplicats dins del mateix Excel (dues unitats -> mateixa posició)
+        if (isset($desiredUnitByPos[$posicio]) && (int)$desiredUnitByPos[$posicio] !== (int)$unitId) {
+            $errors[] = "Fila {$excelRow}: la posició '{$posicio}' està repetida a l'Excel (unitats {$desiredUnitByPos[$posicio]} i {$unitId}).";
             $excelRow++;
             continue;
         }
-
-
-        // 4) Assignar posició a la unitat via helper (sincronitza map + unitat)
-        $res = setUnitPosition($pdo, $unitId, $posicio);
-        if (!$res['ok']) {
-            $errors[] = "Fila {$excelRow}: " . ($res['error'] ?? "Error assignant posició.");
-            $excelRow++;
-            continue;
-        }
-
-        // Forcem ubicacio=magatzem (per coherència)
-        $pdo->prepare("UPDATE item_units SET ubicacio='magatzem', updated_at = NOW() WHERE id = ?")
-            ->execute([$unitId]);
-
+        $desiredUnitByPos[$posicio] = (int)$unitId;
 
         $importats++;
         $excelRow++;
+        continue;
     }
 
     if (!empty($errors)) {
         $pdo->rollBack();
         throw new Exception("Errors trobats:\n" . implode("\n", $errors));
     }
+
+    // ✅ FASE 2: aplicar posicions en bloc (permite swaps)
+
+    // 2.1) Validar que cap posició desitjada està ocupada per un "extern" a l'import
+    foreach ($desiredPosByUnit as $uId => $pos) {
+        $stmt = $pdo->prepare("SELECT item_unit_id FROM magatzem_posicions WHERE codi = ? LIMIT 1");
+        $stmt->execute([$pos]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            $errors[] = "Import: la posició '{$pos}' no existeix al magatzem.";
+            continue;
+        }
+
+        $occId = $row['item_unit_id'];
+        if ($occId !== null) {
+            $occId = (int)$occId;
+
+            // Permès si és la mateixa unitat, o si l'ocupant també està a l'import (swap/cadena)
+            if ($occId !== (int)$uId && !isset($incomingUnitIds[$occId])) {
+                $errors[] = "Import: la posició '{$pos}' està ocupada per la unitat {$occId} (no present a l'import).";
+            }
+        }
+    }
+
+    if (!empty($errors)) {
+        // si tens transacció, fes rollback; si no, simplement mostra errors i surt
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        // aquí retorna/mostra errors com ja facis tu
+        exit;
+    }
+
+    // 2.2) Alliberar posicions de totes les unitats implicades
+    foreach (array_keys($incomingUnitIds) as $uId) {
+        // Protecció: no moure descatalogats via import (opcional però recomanat)
+        $st = $pdo->prepare("SELECT estat, baixa_motiu FROM item_units WHERE id = ? LIMIT 1");
+        $st->execute([(int)$uId]);
+        $u = $st->fetch(PDO::FETCH_ASSOC);
+
+        freePositionByUnit($pdo, (int)$uId);
+    }
+
+        // 2.3) Ocupar segons el desitjat + forçar ubicacio='magatzem'
+        foreach ($desiredPosByUnit as $uId => $pos) {
+            $res = setUnitPosition($pdo, (int)$uId, $pos);
+            if (!$res['ok']) {
+                $errors[] = "Unitat {$uId}: " . ($res['error'] ?? "Error assignant posició '{$pos}'.");
+                continue;
+            }
+
+            $pdo->prepare("UPDATE item_units SET ubicacio='magatzem', updated_at = NOW() WHERE id = ?")
+                ->execute([(int)$uId]);
+        }
+
+        if (!empty($errors)) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            exit;
+        }
+
 
     $pdo->commit();
 

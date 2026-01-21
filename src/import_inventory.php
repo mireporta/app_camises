@@ -5,6 +5,9 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/warehouse_positions.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
+// IMPORTANT: Les posicions s'apliquen en dues fases (swap-friendly).
+// La veritat és magatzem_posicions.item_unit_id. Descatalogats bloquegen posició.
+
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -59,6 +62,12 @@ try {
     // ==========================================================
     $rows = $sheetItems->toArray(null, true, true, true);
     $header = array_map(fn($h) => strtolower(trim((string)$h)), array_shift($rows));
+
+    $desiredPosByUnit = []; // unitId => "A-01"
+    $desiredUnitByPos = []; // "A-01" => unitId
+    $incomingUnitIds  = []; // set d'unitats presents a l'import
+    $importWarnings   = [];
+
 
     foreach ($rows as $row) {
         $values = array_map(fn($v) => trim((string)$v), $row);
@@ -162,33 +171,31 @@ try {
         $vidaUtilitzada = (isset($data['vida_utilitzada']) && $data['vida_utilitzada'] !== '') ? (int)$data['vida_utilitzada'] : 0;
         $ciclesMaquina = (isset($data['cicles_maquina']) && $data['cicles_maquina'] !== '') ? (int)$data['cicles_maquina'] : 0;
 
-        // ✅ Validacions sububicació (1 unitat per posició, només magatzem)
+        // ✅ FASE 1 (LECTURA): validar que la posició existeix + guardar intenció (permet swaps)
         if ($ubicacio === 'magatzem' && !empty($sububicacio)) {
-            $stmt = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
+            // 1) Existeix la posició?
+            $stmt = $pdo->prepare("SELECT 1 FROM magatzem_posicions WHERE codi = ? LIMIT 1");
             $stmt->execute([$sububicacio]);
-            if ((int)$stmt->fetchColumn() === 0) {
+            if (!$stmt->fetchColumn()) {
                 $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} no existeix.";
                 $excelRowNumber++;
                 continue;
             }
 
-            $stmt = $pdo->prepare("SELECT item_unit_id FROM magatzem_posicions WHERE codi = ?");
-            $stmt->execute([$sububicacio]);
-            $occ = $stmt->fetch(PDO::FETCH_ASSOC);
+            // 2) Guardar intenció de posició per aplicar DESPRÉS
+            // IMPORTANT: aquests arrays els has de declarar abans del bucle (veure punt 2)
+            $desiredPosByUnit[(int)$unitId] = $sububicacio;
+            $incomingUnitIds[(int)$unitId] = true;
 
-            if (!$occ) {
-                $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} no existeix.";
-            } else {
-                $occId = $occ['item_unit_id'];
-                // si està ocupada per una altra unitat → error (inclou descatalogats)
-                if ($occId !== null) {
-                    // si estàs important una línia del mateix serial i ja té aquesta posició, això requereix saber unit_id.
-                    // mantenim simple: si hi ha algú ocupant, no deixem assignar.
-                    $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} ja ocupada.";
-                }
+            // 3) Detectar duplicats dins del mateix Excel (dues unitats -> mateixa posició)
+            if (isset($desiredUnitByPos[$sububicacio]) && (int)$desiredUnitByPos[$sububicacio] !== (int)$unitId) {
+                $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} repetida a l'Excel (unitats {$desiredUnitByPos[$sububicacio]} i {$unitId}).";
+                $excelRowNumber++;
+                continue;
             }
-
+            $desiredUnitByPos[$sububicacio] = (int)$unitId;
         }
+
 
         // ✅ Si és màquina o preparació, cal maquina_actual
         if (in_array($ubicacio, ['maquina', 'preparacio'], true) && empty($maquinaActual)) {
@@ -228,6 +235,19 @@ try {
             $ciclesMaquina,
             $estat
         ]);
+
+        // ✅ Recuperar l'ID real de la unitat (per swaps i validacions correctes)
+        $stmt = $pdo->prepare("SELECT id, estat, baixa_motiu FROM item_units WHERE serial = ? LIMIT 1");
+        $stmt->execute([$serial]);
+        $urow = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$urow) {
+            $errors[] = "Fila {$excelRowNumber}: No s'ha pogut recuperar la unitat pel serial {$serial}.";
+            $excelRowNumber++;
+            continue;
+        }
+
+        $unitId = (int)$urow['id'];
 
         // Moviments: només per inserts (i només si la taula existeix)
         if ($stmt->rowCount() === 1) {
@@ -272,6 +292,59 @@ try {
             ELSE x.desc_id
         END
     ");
+
+
+    // ✅ FASE 2 (APLICACIÓ POSICIONS): validar mapa final + buidar + omplir (permite swaps)
+
+    // 2.1) Validar que les posicions desitjades no estan ocupades per algú extern a l'import
+    foreach ($desiredPosByUnit as $uId => $pos) {
+        $stmt = $pdo->prepare("SELECT item_unit_id FROM magatzem_posicions WHERE codi = ? LIMIT 1");
+        $stmt->execute([$pos]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            $errors[] = "Import: La posició '{$pos}' no existeix al magatzem.";
+            continue;
+        }
+
+        $occId = $row['item_unit_id'];
+        if ($occId !== null) {
+            $occId = (int)$occId;
+
+            // Permès si és la mateixa unitat, o si l'ocupant també està a l'import (swap/cadena)
+            if ($occId !== (int)$uId && !isset($incomingUnitIds[$occId])) {
+                $errors[] = "Import: La posició '{$pos}' està ocupada per la unitat {$occId} (no present a l'import).";
+            }
+        }
+    }
+
+    if (!empty($errors)) {
+        $pdo->rollBack();
+        throw new Exception("Errors trobats:\n" . implode("\n", $errors));
+    }
+
+    // 2.2) Alliberar posicions de totes les unitats que participen (abans d'omplir)
+    foreach (array_keys($incomingUnitIds) as $uId) {
+        // Protecció: si és descatalogat, no el movem (ja ho filtrem a fase 1, però ho reforcem)
+        $st = $pdo->prepare("SELECT estat, baixa_motiu FROM item_units WHERE id = ?");
+        $st->execute([(int)$uId]);
+        $u = $st->fetch(PDO::FETCH_ASSOC);
+
+        freePositionByUnit($pdo, (int)$uId);
+    }
+
+    // 2.3) Ocupar segons el desitjat
+    foreach ($desiredPosByUnit as $uId => $pos) {
+        $res = setUnitPosition($pdo, (int)$uId, $pos);
+        if (!$res['ok']) {
+            $errors[] = "Unitat {$uId}: " . ($res['error'] ?? "Error assignant posició '{$pos}'.");
+        }
+    }
+
+    if (!empty($errors)) {
+        $pdo->rollBack();
+        throw new Exception("Errors aplicant posicions:\n" . implode("\n", $errors));
+    }
 
 
     $pdo->commit();

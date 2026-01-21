@@ -24,17 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        // ✅ Validar que la posició existeix
-        $stmtPos = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
-        $stmtPos->execute([$nova_sububicacio]);
-        if ($stmtPos->fetchColumn() == 0) {
-            echo "❌ Error: La posició '$nova_sububicacio' no existeix al magatzem.";
-            exit;
-        }
-
         // ✅ Validar que no està ocupada per una altra unitat
         $stmtOcc = $pdo->prepare("
-            SELECT item_unit_id FROM magatzem_posicions
+            SELECT item_unit_id 
+            FROM magatzem_posicions
             WHERE codi = ?
         ");
         $stmtOcc->execute([$nova_sububicacio]);
@@ -48,13 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $stmtOcc->execute([$nova_sububicacio, $id]);
-        if ($stmtOcc->fetchColumn() > 0) {
-            echo "❌ Error: La posició '$nova_sububicacio' ja està ocupada.";
-            exit;
-        }
-
-        $stmt = $pdo->prepare("SELECT item_id, ubicacio, sububicacio, maquina_actual FROM item_units WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT item_id, ubicacio, sububicacio, maquina_actual, maquina_baixa, estat FROM item_units WHERE id = ?");
         $stmt->execute([$id]);
         $unit = $stmt->fetch(PDO::FETCH_ASSOC);
 
