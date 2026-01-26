@@ -37,11 +37,22 @@ $sql = "
 
 ";
 if ($onlyOccupied) {
-    $sql .= " WHERE iu.id IS NOT NULL ";
+    $sql .= " AND mp.item_unit_id IS NOT NULL ";
 }
-$sql .= " ORDER BY mp.codi ASC";
+$sql .= " WHERE mp.magatzem_code = 'MAG01' ORDER BY mp.codi ASC";
 
 $positions = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+$stmtAux = $pdo->prepare("
+    SELECT iu.id, iu.serial, iu.estat, iu.baixa_motiu, iu.vida_utilitzada, iu.vida_total, i.sku
+    FROM item_units iu
+    LEFT JOIN items i ON i.id = iu.item_id
+    WHERE iu.ubicacio='magatzem' AND iu.magatzem_code='MAG02'
+    ORDER BY (iu.estat='actiu') DESC, i.sku ASC, iu.serial ASC
+");
+$stmtAux->execute();
+$auxUnits = $stmtAux->fetchAll(PDO::FETCH_ASSOC);
+
 
 // Agrupar per "zona/passadís" segons els 2 primers caràcters i les files segons lletra
 $zones = [];
@@ -110,26 +121,6 @@ ob_start();
 
 </div>
 
-
-<!-- 🔎 Filtre de vista: només ocupades -->
-<form method="GET" class="mb-4 flex items-center gap-3 text-sm">
-  <label class="inline-flex items-center gap-2">
-    <input
-      type="checkbox"
-      name="only_occupied"
-      value="1"
-      <?= $onlyOccupied ? 'checked' : '' ?>
-      onchange="this.form.submit()"
-    >
-    <span>Mostrar només posicions ocupades</span>
-  </label>
-
-  <?php if ($onlyOccupied): ?>
-    <a href="magatzem_map.php" class="text-xs text-blue-600 hover:underline">
-      Treure filtre
-    </a>
-  <?php endif; ?>
-</form>
 
 <!-- 🧱 Vista gràfica del magatzem -->
 <?php if (empty($positions)): ?>
@@ -240,6 +231,8 @@ ob_start();
   <?php endforeach; ?>
 <?php endif; ?>
 
+
+
 <script>
 const f = document.getElementById('import-map-file');
 const form = document.getElementById('import-map-form');
@@ -259,6 +252,70 @@ f?.addEventListener('change', function () {
   form.submit();
 });
 </script>
+
+<!-- MAGATZEM AUXILIAR (MAG02) -->
+<!-- ✅ MAGATZEM AUXILIAR (MAG02) -->
+<div class="mt-8">
+  <div class="flex items-center justify-between">
+    <h2 class="text-lg font-semibold">Magatzem auxiliar (MAG02)</h2>
+    <div class="text-sm text-gray-600">
+      Total: <span class="font-semibold"><?= count($auxUnits) ?></span>
+    </div>
+  </div>
+
+  <?php if (empty($auxUnits)): ?>
+    <div class="mt-3 p-4 text-sm text-gray-600 border rounded-lg bg-white">
+      No hi ha recanvis al MAG02.
+    </div>
+  <?php else: ?>
+    <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:[grid-template-columns:repeat(13,minmax(0,1fr))] gap-2">
+      <?php foreach ($auxUnits as $u): ?>
+        <?php
+          $estat = (string)($u['estat'] ?? '');
+          $isInactive = ($estat !== 'actiu');
+
+          $vidaTotal = (int)($u['vida_total'] ?? 0);
+          $vidaUsed  = (int)($u['vida_utilitzada'] ?? 0);
+
+          $pct = null;
+          if ($vidaTotal > 0) {
+              $pct = (int)round(($vidaUsed / $vidaTotal) * 100);
+              if ($pct < 0) $pct = 0;
+              if ($pct > 999) $pct = 999; // evita números bojos si hi ha dades malament
+          }
+
+          $boxClass = 'bg-gray-50 border-gray-200';
+          if (!$isInactive) $boxClass = 'bg-green-50 border-green-300';
+          if ($isInactive)  $boxClass = 'bg-orange-50 border-orange-300';
+        ?>
+        <div class="border rounded-lg p-2 text-xs <?= $boxClass ?>">
+          <div class="font-semibold truncate">
+            <?= htmlspecialchars((string)($u['sku'] ?? '')) ?>
+          </div>
+
+          <div class="font-mono truncate text-gray-700">
+            <?= htmlspecialchars((string)($u['serial'] ?? '')) ?>
+          </div>
+
+          <?php if ($vidaPercent !== null): ?>
+            <div class="mt-1">
+              <span class="font-semibold">Vida:</span>
+              <span class="<?= $vidaPercent < 10 ? 'text-red-600' : 'text-gray-800' ?>">
+                <?= (int)$vidaPercent ?>%
+              </span>
+            </div>
+          <?php endif; ?>
+
+          <?php if ($isInactive && !empty($u['baixa_motiu'])): ?>
+            <div class="mt-1 text-[10px] text-orange-700 truncate">
+              <?= htmlspecialchars((string)$u['baixa_motiu']) ?>
+            </div>
+          <?php endif; ?>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
+</div>
 
 
 <?php

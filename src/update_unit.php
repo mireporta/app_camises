@@ -9,8 +9,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Raw per saber si el camp ha vingut al POST
     $sububicacio_raw = $_POST['sububicacio'] ?? null;
+    $magatzem_code = strtoupper(trim((string)($_POST['magatzem_code'] ?? 'MAG01')));
     // Versió "neteja" (si ve, el fem trim; si no ve, queda null)
     $sububicacio = $sububicacio_raw !== null ? trim($sububicacio_raw) : null;
+    
 
     $vida_total = isset($_POST['vida_total']) && $_POST['vida_total'] !== ''
         ? (int)$_POST['vida_total']
@@ -125,7 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             // ✅ Regla: només alliberem posició si la baixa NO és "descatalogat"
             if (strtolower($motiu) !== 'descatalogat') {
-                freePositionByUnit($pdo, $id);
+                freePositionByUnit($pdo, (int)$id, 'MAG01');
+
             }
             // Actualitzar estat i netejar camps
             if (strtolower($motiu) === 'descatalogat') {
@@ -185,26 +188,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $st->execute([$id]);
         $cur = $st->fetch(PDO::FETCH_ASSOC) ?: ['estat' => null, 'baixa_motiu' => null];
 
-        if ($sububicacio === '') {
-            // Volen treure posició
-            if ($cur['estat'] === 'inactiu' && strtolower((string)$cur['baixa_motiu']) === 'descatalogat') {
-                echo "❌ No es pot alliberar la posició: la unitat està descatalogada (posició ha de quedar ocupada).";
-                exit;
-            }
+        /* =====================================================
+        ✅ CAS 1: MAG02 (magatzem auxiliar, sense posicions)
+        ===================================================== */
+        if ($magatzem_code === 'MAG02') {
+            // Alliberem qualsevol posició de MAG01
+            freePositionByUnit($pdo, (int)$id, 'MAG01');
 
-            freePositionByUnit($pdo, $id);
-            $fields[] = "sububicacio = NULL";
-        } else {
-            // Volen posar/canviar posició: fem-ho via helper (sincronitza map + unitat)
-            $res = setUnitPosition($pdo, $id, $sububicacio);
-            if (!$res['ok']) {
-                echo $res['error'] ?? "❌ Error assignant la posició.";
-                exit;
-            }
-            // opcional però recomanable: si té posició, és magatzem
+            // Deixem la unitat a MAG02 sense sububicació
             $fields[] = "ubicacio = 'magatzem'";
+            $fields[] = "magatzem_code = 'MAG02'";
+            $fields[] = "sububicacio = NULL";
+
+        } else {
+            /* =========================================
+            ✅ CAS 2: MAG01 (lògica actual, amb mapa)
+            ========================================= */
+
+            if ($sububicacio === '') {
+                // Volen treure posició (només permès si NO és descatalogat)
+                if ($cur['estat'] === 'inactiu' && strtolower((string)$cur['baixa_motiu']) === 'descatalogat') {
+                    echo "❌ No es pot alliberar la posició: la unitat està descatalogada (posició ha de quedar ocupada).";
+                    exit;
+                }
+
+                freePositionByUnit($pdo, (int)$id, 'MAG01');
+                $fields[] = "sububicacio = NULL";
+                $fields[] = "magatzem_code = 'MAG01'";
+
+            } else {
+                // Volen posar/canviar posició (MAG01)
+                $res = setUnitPosition($pdo, (int)$id, $sububicacio, 'MAG01');
+                if (!$res['ok']) {
+                    echo $res['error'] ?? "❌ Error assignant la posició.";
+                    exit;
+                }
+
+                $fields[] = "ubicacio = 'magatzem'";
+                $fields[] = "magatzem_code = 'MAG01'";
+            }
         }
     }
+
 
 
     if ($vida_total !== null) {

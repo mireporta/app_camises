@@ -289,7 +289,8 @@ if (!empty($_SESSION['import_message'])): ?>
                     <?= (int)$u["id"] ?>, 
                     <?= json_encode($u["serial"]) ?>, 
                     <?= json_encode($u["sububicacio"] ?? "") ?>,
-                    <?= json_encode($u["vida_total"] ?? "") ?>
+                    <?= json_encode($u["vida_total"] ?? "") ?>,
+                    <?= json_encode($u["magatzem_code"] ?? "MAG01") ?>
                   )'
                 >✏️</button>
 
@@ -366,6 +367,17 @@ if (!empty($_SESSION['import_message'])): ?>
       <div class="mb-4">
         <label class="block mb-1 font-medium">Codi unitat (serial)</label>
         <input type="text" id="edit-unit-serial" disabled class="w-full p-2 border rounded bg-gray-100 text-gray-600">
+      </div>
+
+      <div class="mb-4">
+        <label class="block mb-1 font-medium">Magatzem</label>
+        <select name="magatzem_code" id="edit-unit-magatzem" class="w-full p-2 border rounded">
+          <option value="MAG01">MAG01 (amb posicions)</option>
+          <option value="MAG02">MAG02 (auxiliar, sense posició)</option>
+        </select>
+        <p class="text-xs text-gray-500 mt-1">
+          Si tries MAG02, la sububicació queda buida i no ocupa cap posició.
+        </p>
       </div>
 
       <div class="mb-4">
@@ -478,13 +490,16 @@ function closeItemModal() {
   modal.classList.remove('flex');
 }
 
-function openUnitModal(id, serial, sububicacio = '', vida_total = '') {
+function openUnitModal(id, serial, sububicacio = '', vida_total = '', magatzemCode = 'MAG01') {
   document.getElementById('edit-unit-id').value = id;
   document.getElementById('edit-unit-serial').value = serial;
   document.getElementById('edit-unit-sububicacio').value = sububicacio || '';
   document.getElementById('edit-unit-total').value = vida_total || '';
+  const sel = document.getElementById('edit-unit-magatzem');
+  if (sel) sel.value = magatzemCode || 'MAG01';
   document.getElementById('editUnitModal').classList.remove('hidden');
 }
+
 
 function closeUnitModal() {
   document.getElementById('editUnitModal').classList.add('hidden');

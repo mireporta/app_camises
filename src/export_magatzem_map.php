@@ -15,6 +15,11 @@ $stmt = $pdo->query("
         ON iu.id = mp.item_unit_id
       LEFT JOIN items i
         ON i.id = iu.item_id
+        FROM magatzem_posicions mp
+...
+WHERE mp.magatzem_code='MAG01'
+ORDER BY mp.codi
+
     ORDER BY mp.codi ASC
 ");
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

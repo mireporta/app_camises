@@ -66,9 +66,9 @@ try {
     $desiredPosByUnit = []; // unitId => "A-01"
     $desiredUnitByPos = []; // "A-01" => unitId
     $incomingUnitIds  = []; // set d'unitats presents a l'import
+    $moveToMag02      = []; // unitId => true
     $importWarnings   = [];
-
-
+    
     foreach ($rows as $row) {
         $values = array_map(fn($v) => trim((string)$v), $row);
         $data = array_combine($header, $values);
@@ -171,7 +171,7 @@ try {
         $vidaUtilitzada = (isset($data['vida_utilitzada']) && $data['vida_utilitzada'] !== '') ? (int)$data['vida_utilitzada'] : 0;
         $ciclesMaquina = (isset($data['cicles_maquina']) && $data['cicles_maquina'] !== '') ? (int)$data['cicles_maquina'] : 0;
 
-        // ✅ FASE 1 (LECTURA): validar que la posició existeix + guardar intenció (permet swaps)
+/*         // ✅ FASE 1 (LECTURA): validar que la posició existeix + guardar intenció (permet swaps)
         if ($ubicacio === 'magatzem' && !empty($sububicacio)) {
             // 1) Existeix la posició?
             $stmt = $pdo->prepare("SELECT 1 FROM magatzem_posicions WHERE codi = ? LIMIT 1");
@@ -194,7 +194,9 @@ try {
                 continue;
             }
             $desiredUnitByPos[$sububicacio] = (int)$unitId;
-        }
+        } */
+
+        
 
 
         // ✅ Si és màquina o preparació, cal maquina_actual
@@ -210,12 +212,13 @@ try {
         // INSERT / UPDATE unitat (serial UNIQUE)
         $stmt = $pdo->prepare("
             INSERT INTO item_units
-            (item_id, serial, ubicacio, sububicacio, maquina_actual,
+            (item_id, serial, ubicacio, magatzem_code, sububicacio, maquina_actual,
              vida_total, vida_utilitzada, cicles_maquina, estat, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
             ON DUPLICATE KEY UPDATE
                 item_id         = VALUES(item_id),
                 ubicacio        = VALUES(ubicacio),
+                magatzem_code   = VALUES(magatzem_code),
                 sububicacio     = VALUES(sububicacio),
                 maquina_actual  = VALUES(maquina_actual),
                 vida_total      = VALUES(vida_total),
@@ -224,10 +227,18 @@ try {
                 estat           = VALUES(estat),
                 updated_at      = NOW()
         ");
+
+        $magatzemCode = null;
+        if ($ubicacio === 'magatzem') {
+            $magatzemCode = (!empty($sububicacio)) ? 'MAG01' : 'MAG02';
+        }
+
+
         $stmt->execute([
             (int)$itemId,
             $serial,
             $ubicacio,
+            $magatzemCode ?? 'MAG01',
             $sububicacio !== '' ? $sububicacio : null,
             $maquinaActual !== '' ? $maquinaActual : null,
             $vidaTotal,
@@ -248,6 +259,37 @@ try {
         }
 
         $unitId = (int)$urow['id'];
+
+        // ✅ MAG01/MAG02: magatzem amb posició => MAG01, magatzem sense posició => MAG02
+        if ($ubicacio === 'magatzem') {
+            $incomingUnitIds[$unitId] = true;
+
+            if (!empty($sububicacio)) {
+                // MAG01
+                $stmt = $pdo->prepare("SELECT 1 FROM magatzem_posicions WHERE magatzem_code='MAG01' AND codi = ? LIMIT 1");
+                $stmt->execute([$sububicacio]);
+                if (!$stmt->fetchColumn()) {
+                    $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} no existeix a MAG01.";
+                    $excelRowNumber++;
+                    continue;
+                }
+
+                $desiredPosByUnit[$unitId] = $sububicacio;
+
+                if (isset($desiredUnitByPos[$sububicacio]) && (int)$desiredUnitByPos[$sububicacio] !== $unitId) {
+                    $errors[] = "Fila {$excelRowNumber}: Sububicació {$sububicacio} repetida a l'Excel (unitats {$desiredUnitByPos[$sububicacio]} i {$unitId}).";
+                    $excelRowNumber++;
+                    continue;
+                }
+                $desiredUnitByPos[$sububicacio] = $unitId;
+
+            } else {
+                // MAG02
+                $moveToMag02[$unitId] = true;
+                $sububicacio = null; // coherència
+            }
+        }
+
 
         // Moviments: només per inserts (i només si la taula existeix)
         if ($stmt->rowCount() === 1) {
@@ -272,7 +314,7 @@ try {
         throw new Exception("Errors trobats:\n" . implode("\n", $errors));
     }
 
-    // ✅ RESYNC final: magatzem_posicions.item_unit_id reflecteix item_units.sububicacio
+    /* // ✅ RESYNC final: magatzem_posicions.item_unit_id reflecteix item_units.sububicacio
     // Regla: ocupem si (estat actiu) o (estat inactiu + baixa_motiu=descatalogat), i ubicacio=magatzem
     $pdo->exec("UPDATE magatzem_posicions SET item_unit_id = NULL");
 
@@ -291,14 +333,14 @@ try {
             WHEN x.active_id <> 0 THEN x.active_id
             ELSE x.desc_id
         END
-    ");
+    "); */
 
 
     // ✅ FASE 2 (APLICACIÓ POSICIONS): validar mapa final + buidar + omplir (permite swaps)
 
     // 2.1) Validar que les posicions desitjades no estan ocupades per algú extern a l'import
     foreach ($desiredPosByUnit as $uId => $pos) {
-        $stmt = $pdo->prepare("SELECT item_unit_id FROM magatzem_posicions WHERE codi = ? LIMIT 1");
+        $stmt = $pdo->prepare("SSELECT item_unit_id FROM magatzem_posicions WHERE magatzem_code='MAG01' AND codi = ? LIMIT 1");
         $stmt->execute([$pos]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -330,7 +372,17 @@ try {
         $st->execute([(int)$uId]);
         $u = $st->fetch(PDO::FETCH_ASSOC);
 
-        freePositionByUnit($pdo, (int)$uId);
+        freePositionByUnit($pdo, (int)$uId, 'MAG01');
+        $res = setUnitPosition($pdo, (int)$uId, $pos, 'MAG01');
+
+    }
+
+    // 2.2b) Aplicar moviments a MAG02 (sense posicions)
+    foreach (array_keys($moveToMag02) as $uId) {
+        $res = moveUnitToWarehouseNoPositions($pdo, (int)$uId, 'MAG02');
+        if (!$res['ok']) {
+            $errors[] = "Unitat {$uId}: " . ($res['error'] ?? "Error movent a MAG02.");
+        }
     }
 
     // 2.3) Ocupar segons el desitjat

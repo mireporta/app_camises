@@ -102,7 +102,7 @@ try {
 
 
         // 1) Validar que la posició existeix
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE codi = ?");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM magatzem_posicions WHERE magatzem_code='MAG01' AND codi = ?");
         $stmt->execute([$posicio]);
         if ((int)$stmt->fetchColumn() === 0) {
             $errors[] = "Fila {$excelRow}: la posició '{$posicio}' no existeix.";
@@ -135,19 +135,6 @@ try {
         }
         $desiredUnitByPos[$posicio] = (int)$unitId;
 
-
-        // 4) Guardar intenció (s'aplicarà al final per permetre swaps)
-        $desiredPosByUnit[(int)$unitId] = $posicio;
-        $incomingUnitIds[(int)$unitId] = true;
-
-        // Duplicats dins del mateix Excel (dues unitats -> mateixa posició)
-        if (isset($desiredUnitByPos[$posicio]) && (int)$desiredUnitByPos[$posicio] !== (int)$unitId) {
-            $errors[] = "Fila {$excelRow}: la posició '{$posicio}' està repetida a l'Excel (unitats {$desiredUnitByPos[$posicio]} i {$unitId}).";
-            $excelRow++;
-            continue;
-        }
-        $desiredUnitByPos[$posicio] = (int)$unitId;
-
         $importats++;
         $excelRow++;
         continue;
@@ -162,7 +149,7 @@ try {
 
     // 2.1) Validar que cap posició desitjada està ocupada per un "extern" a l'import
     foreach ($desiredPosByUnit as $uId => $pos) {
-        $stmt = $pdo->prepare("SELECT item_unit_id FROM magatzem_posicions WHERE codi = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT item_unit_id FROM magatzem_posicions WHERE magatzem_code='MAG01' AND codi = ? LIMIT 1");
         $stmt->execute([$pos]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -197,6 +184,8 @@ try {
         $u = $st->fetch(PDO::FETCH_ASSOC);
 
         freePositionByUnit($pdo, (int)$uId);
+        $res = setUnitPosition($pdo, (int)$uId, $pos);
+
     }
 
         // 2.3) Ocupar segons el desitjat + forçar ubicacio='magatzem'
