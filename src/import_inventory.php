@@ -340,7 +340,7 @@ try {
 
     // 2.1) Validar que les posicions desitjades no estan ocupades per algú extern a l'import
     foreach ($desiredPosByUnit as $uId => $pos) {
-        $stmt = $pdo->prepare("SSELECT item_unit_id FROM magatzem_posicions WHERE magatzem_code='MAG01' AND codi = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT item_unit_id FROM magatzem_posicions WHERE magatzem_code='MAG01' AND codi = ? LIMIT 1");
         $stmt->execute([$pos]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 

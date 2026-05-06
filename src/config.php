@@ -15,7 +15,12 @@ if (file_exists(__DIR__ . '/config.local.php')) {
 
 // Password d'import (si no ve del local)
 if (!defined('IMPORT_PASSWORD')) {
-    define('IMPORT_PASSWORD', 'Camises2025');
+    define('IMPORT_PASSWORD', 'Camises2026');
+}
+
+// Password de configuració/admin (si no ve del local)
+if (!defined('CONFIG_PASSWORD')) {
+    define('CONFIG_PASSWORD', 'Camises2026');
 }
 
 try {

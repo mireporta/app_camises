@@ -3,7 +3,7 @@ require_once("../src/config.php");
 require_once("layout.php");
 
 // 🏭 Obtenim totes les màquines
-$maquines = $pdo->query("SELECT * FROM maquines ORDER BY codi ASC")->fetchAll(PDO::FETCH_ASSOC);
+$maquines = $pdo->query("SELECT * FROM maquines WHERE activa = 1 ORDER BY codi ASC")->fetchAll(PDO::FETCH_ASSOC);
 
 // 🔧 Per cada màquina, obtenim les unitats instal·lades (ubicació = 'maquina')
 $maquinaItems = [];
