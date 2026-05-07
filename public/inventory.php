@@ -214,8 +214,9 @@ if (!empty($_SESSION['import_message'])): ?>
                 <th class="px-3 py-1">Codi unitat</th>
                 <th class="px-3 py-1">Ubicació</th>
                 <th class="px-3 py-1 text-center">Estanteria</th>
-                <th class="px-3 py-1 text-center">Cicles màquina</th>
+                <th class="px-3 py-1 text-center">Canvis</th>
                 <th class="px-3 py-1 text-center">Vida útil</th>
+                <th class="px-3 py-1 text-center">Proveïdor</th>
                 <th class="px-3 py-1 text-right">Accions</th>
               </tr>
             </thead>
@@ -281,6 +282,7 @@ if (!empty($_SESSION['import_message'])): ?>
                   <div class="text-[12px] text-gray-600 italic">Sense dades de vida útil</div>
                 <?php endif; ?>
               </td>
+              <td class="px-3 py-1 text-center">  <?= htmlspecialchars($u['proveidor'] ?? '—') ?></td>
               <td class="px-3 py-1 text-right flex justify-end gap-2">
                 <!-- ✏️ Editar -->
                 <button 

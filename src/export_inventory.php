@@ -80,6 +80,7 @@ try {
             iu.vida_utilitzada,
             iu.cicles_maquina,
             iu.estat,
+            iu.proveidor,
             iu.updated_at
         FROM item_units iu
         JOIN items i ON i.id = iu.item_id
@@ -139,11 +140,11 @@ try {
 
     $headersUnits = [
         'sku', 'serial', 'ubicacio', 'sububicacio', 'maquina_actual',
-        'vida_total', 'vida_utilitzada', 'cicles_maquina', 'estat', 'updated_at'
+        'vida_total', 'vida_utilitzada', 'cicles_maquina', 'estat', 'proveidor', 'updated_at'
     ];
     $sheetUnits->fromArray($headersUnits, null, 'A1');
     $sheetUnits->freezePane('A2');
-    $sheetUnits->setAutoFilter('A1:J1');
+    $sheetUnits->setAutoFilter('A1:K1');
 
     $r = 2;
     foreach ($unitats as $u) {
@@ -158,13 +159,14 @@ try {
             ($u['vida_utilitzada'] === null ? '' : (int)$u['vida_utilitzada']),
             ($u['cicles_maquina'] === null ? '' : (int)$u['cicles_maquina']),
             (string)($u['estat'] ?? ''),
+            (string)($u['proveidor'] ?? ''),
             (string)($u['updated_at'] ?? ''),
         ], null, "C{$r}");
 
         $r++;
     }
 
-    foreach (range('A', 'J') as $col) {
+    foreach (range('A', 'K') as $col) {
         $sheetUnits->getColumnDimension($col)->setAutoSize(true);
     }
 

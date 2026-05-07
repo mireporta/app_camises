@@ -14,7 +14,7 @@ $allPositions = $pdo->query("
     ORDER BY codi ASC
 ")->fetchAll(PDO::FETCH_COLUMN);
 
-/* 🧾 1️⃣ Registrar entrada manual (compra o proveïdor) */
+/* /* 🧾 1️⃣ Registrar entrada manual (compra o proveïdor) 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manual') {
 
     $sku         = trim($_POST['sku'] ?? '');
@@ -91,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'manua
         }
     }
 }
-
+ */
 
 /* ✅ 2️⃣ Acceptar recanvi del magatzem intermig (amb escaneig) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'acceptar_intermig') {
@@ -272,7 +272,7 @@ $intermigItems = $pdo->query("
 ob_start();
 ?>
 
-<h2 class="text-3xl font-bold mb-6">Entrades d'estoc</h2>
+<h2 class="text-3xl font-bold mb-6">Entrades</h2>
 
 <?php if ($message): ?>
   <?php
@@ -287,62 +287,6 @@ ob_start();
 <?php endif; ?>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
-  <!-- 🧾 Entrada manual -->
-  <div class="bg-white p-6 rounded-lg shadow-md">
-    <h3 class="text-xl font-bold mb-4 text-gray-700">📥 Entrada de recanvi nou</h3>
-    <form method="POST" class="space-y-4">
-      <input type="hidden" name="action" value="manual">
-      <div>
-        <label class="block mb-1 font-medium">Codi camisa (SKU)</label>
-        <input type="text" name="sku" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200" autofocus>
-      </div>
-      <div>
-        <label class="block mb-1 font-medium">Codi sèrie (Serial)</label>
-        <input type="text" name="serial" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: ENRE001.01">
-      </div>
-      <div>
-        <label class="block mb-1 font-medium">Categoria</label>
-        <input type="text" name="categoria" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: A4 / A5 / A4+">
-      </div>
-      <div>
-        <label class="block mb-1 font-medium">Vida útil total (hores o cicles)</label>
-        <input type="number" name="vida_total" min="1" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: 200">
-      </div>
-      <div>
-        <label class="block mb-1 font-medium">Posició magatzem (opcional)</label>
-        <input
-          type="text"
-          name="sububicacio"
-          list="llista-sububicacions"
-          class="w-full p-2 border rounded focus:ring focus:ring-blue-200 font-mono"
-          placeholder="Ex: 01A01 (o buit per posició neutra)"
-        >
-        <p class="text-xs text-gray-400 mt-1">
-          Tria una posició existent del magatzem. No es podrà repetir.
-          Pots deixar-ho buit si la unitat no té posició fixa (zona neutra).
-        </p>
-
-        <!-- 🔽 Llista de posicions definides -->
-        <datalist id="llista-sububicacions">
-          <?php foreach ($allPositions as $pos): ?>
-            <option value="<?= htmlspecialchars($pos) ?>"></option>
-          <?php endforeach; ?>
-        </datalist>
-      </div>
-
-      <div>
-        <label class="block mb-1 font-medium">Origen</label>
-        <select name="origen" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200">
-          <option value="Proveïdor 1">Proveïdor 1</option>
-          <option value="Proveïdor 2">Proveïdor 2</option>
-        </select>
-      </div>
-      <button type="submit" class="bg-green-600 text-white px-5 py-2 rounded hover:bg-green-700 transition w-full">
-        Registrar entrada
-      </button>
-    </form>
-  </div>
 
   <!-- 📦 Magatzem intermig -->
   <div class="bg-white p-6 rounded-lg shadow-md">

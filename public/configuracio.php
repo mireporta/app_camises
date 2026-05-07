@@ -136,6 +136,56 @@ if ($isLogged && isset($_POST['nova_maquina'])) {
     }
 }
 
+// Afegir proveïdor
+if ($isLogged && isset($_POST['nou_proveidor'])) {
+
+    $nomProveidor = trim($_POST['nou_proveidor']);
+
+    if ($nomProveidor !== '') {
+
+        $stmt = $pdo->prepare("
+            SELECT id
+            FROM proveidors
+            WHERE nom = ?
+        ");
+
+        $stmt->execute([$nomProveidor]);
+
+        if ($stmt->fetch()) {
+            $error = 'Ja existeix aquest proveïdor';
+        } else {
+            $stmt = $pdo->prepare("
+                INSERT INTO proveidors (nom, actiu)
+                VALUES (?, 1)
+            ");
+
+            $stmt->execute([$nomProveidor]);
+
+            $success = 'Proveïdor creat correctament';
+        }
+    }
+}
+
+
+// Activar / desactivar proveïdor
+if ($isLogged && isset($_POST['toggle_proveidor_id'])) {
+
+    $id = (int)$_POST['toggle_proveidor_id'];
+    $nouActiu = (int)$_POST['nou_actiu'];
+
+    $stmt = $pdo->prepare("
+        UPDATE proveidors
+        SET actiu = ?
+        WHERE id = ?
+    ");
+
+    $stmt->execute([$nouActiu, $id]);
+
+    header('Location: configuracio.php');
+    exit;
+}
+
+
 // Carregar màquines
 $maquines = [];
 
@@ -147,8 +197,20 @@ if ($isLogged) {
     ")->fetchAll(PDO::FETCH_ASSOC);
 }
 
+$proveidors = [];
+
+if ($isLogged) {
+    $proveidors = $pdo->query("
+        SELECT *
+        FROM proveidors
+        ORDER BY nom ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+}
+
 ob_start();
 ?>
+
+
 
 <div class="max-w-6xl mx-auto space-y-6">
 
@@ -313,6 +375,89 @@ ob_start();
                 </form>
             </div>
         </div>
+
+        <div class="bg-white rounded-xl shadow p-6">
+            <h3 class="text-xl font-semibold mb-4">Proveïdors</h3>
+
+            <form method="post" class="space-y-4 mb-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Nou proveïdor
+                    </label>
+
+                    <input
+                        type="text"
+                        name="nou_proveidor"
+                        required
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    >
+                </div>
+
+                <button type="submit"
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold">
+                    Crear proveïdor
+                </button>
+            </form>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm text-left">
+                    <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+                        <tr>
+                            <th class="px-4 py-2">Proveïdor</th>
+                            <th class="px-4 py-2">Estat</th>
+                            <th class="px-4 py-2">Acció</th>
+                        </tr>
+                    </thead>
+
+                    <tbody class="divide-y divide-gray-100">
+                        <?php foreach ($proveidors as $prov): ?>
+                            <tr>
+                                <td class="px-4 py-3 font-semibold">
+                                    <?= htmlspecialchars($prov['nom']) ?>
+                                </td>
+
+                                <td class="px-4 py-3">
+                                    <?php if ((int)$prov['actiu'] === 1): ?>
+                                        <span class="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold">
+                                            Actiu
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="bg-gray-200 text-gray-600 px-2 py-1 rounded-full text-xs font-semibold">
+                                            Inactiu
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
+
+                                <td class="px-4 py-3">
+                                    <form method="post" class="m-0">
+                                        <input
+                                            type="hidden"
+                                            name="toggle_proveidor_id"
+                                            value="<?= (int)$prov['id'] ?>"
+                                        >
+
+                                        <input
+                                            type="hidden"
+                                            name="nou_actiu"
+                                            value="<?= ((int)$prov['actiu'] === 1) ? 0 : 1 ?>"
+                                        >
+
+                                        <button type="submit"
+                                                class="<?= ((int)$prov['actiu'] === 1)
+                                                    ? 'bg-red-100 hover:bg-red-200 text-red-700'
+                                                    : 'bg-green-100 hover:bg-green-200 text-green-700'
+                                                ?> px-4 py-2 rounded-lg text-sm font-semibold">
+                                            <?= ((int)$prov['actiu'] === 1) ? 'Desactivar' : 'Activar' ?>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
 
         <div class="bg-white rounded-xl shadow p-6">
             <h3 class="text-xl font-semibold mb-4">Màquines existents</h3>

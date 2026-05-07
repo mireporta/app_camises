@@ -57,13 +57,13 @@ function newEntry(
 
         $stmt = $pdo->prepare("
             INSERT INTO item_units
-                (item_id, serial, ubicacio, sububicacio, estat,
+                (item_id, serial, ubicacio, sububicacio, estat, proveidor,
                 vida_utilitzada, vida_total, created_at, updated_at)
             VALUES
-                (?, ?, 'magatzem', ?, 'actiu',
+                (?, ?, 'magatzem', ?, 'actiu',?,
                 0, ?, NOW(), NOW())
         ");
-        $stmt->execute([$itemId, $serial, $sububicacio, $vida_total]);
+        $stmt->execute([$itemId, $serial, $sububicacio, $origen, $vida_total]);
 
         $unitId = (int)$pdo->lastInsertId();
 

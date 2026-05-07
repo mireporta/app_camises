@@ -7,6 +7,13 @@ $message = "";
 $rxKeepOpen = false;
 $rxData = null;
 
+// 🔹 Proveïdors actius
+$proveidors = $pdo->query("
+    SELECT nom
+    FROM proveidors
+    WHERE actiu = 1
+    ORDER BY nom ASC
+")->fetchAll(PDO::FETCH_COLUMN);
 
 // 🔹 Carregar totes les posicions definides al magatzem
 $allPositions = $pdo->query("
@@ -343,7 +350,20 @@ ob_start();
 
       <div>
         <label class="block mb-1 font-medium">Proveïdor</label>
-        <input type="text" name="proveidor" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: Proveïdor 1">
+        <select
+          name="proveidor"
+          required
+          class="w-full p-2 border rounded focus:ring focus:ring-blue-200">
+          <option value="">
+              Selecciona proveïdor...
+          </option>
+
+          <?php foreach ($proveidors as $prov): ?>
+              <option value="<?= htmlspecialchars($prov) ?>">
+                  <?= htmlspecialchars($prov) ?>
+              </option>
+          <?php endforeach; ?>
+       </select>
       </div>
 
       <div>

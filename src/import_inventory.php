@@ -131,7 +131,10 @@ try {
 
         $sububicacio = isset($data['sububicacio']) ? trim((string)$data['sububicacio']) : null;
         $maquinaActual = isset($data['maquina_actual']) ? trim((string)$data['maquina_actual']) : null;
-
+        $proveidor = isset($data['proveidor']) ? trim((string)$data['proveidor']) : null;
+        if ($proveidor === '') {
+            $proveidor = null;
+        }
         // estat
         $estat = isset($data['estat']) && trim((string)$data['estat']) !== ''
             ? trim((string)$data['estat'])
@@ -213,8 +216,8 @@ try {
         $stmt = $pdo->prepare("
             INSERT INTO item_units
             (item_id, serial, ubicacio, magatzem_code, sububicacio, maquina_actual,
-             vida_total, vida_utilitzada, cicles_maquina, estat, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+             vida_total, vida_utilitzada, cicles_maquina, estat, proveidor, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
             ON DUPLICATE KEY UPDATE
                 item_id         = VALUES(item_id),
                 ubicacio        = VALUES(ubicacio),
@@ -225,6 +228,7 @@ try {
                 vida_utilitzada = VALUES(vida_utilitzada),
                 cicles_maquina  = VALUES(cicles_maquina),
                 estat           = VALUES(estat),
+                proveidor = VALUES(proveidor),
                 updated_at      = NOW()
         ");
 
@@ -244,7 +248,8 @@ try {
             $vidaTotal,
             $vidaUtilitzada,
             $ciclesMaquina,
-            $estat
+            $estat,
+            $proveidor
         ]);
 
         // ✅ Recuperar l'ID real de la unitat (per swaps i validacions correctes)
