@@ -5,48 +5,55 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
-$stmt = $pdo->query("
-    SELECT 
-      mp.codi AS posicio,
-      iu.serial,
-      i.sku
-      FROM magatzem_posicions mp
-      LEFT JOIN item_units iu
-        ON iu.id = mp.item_unit_id
-      LEFT JOIN items i
-        ON i.id = iu.item_id
-        FROM magatzem_posicions mp
-...
-WHERE mp.magatzem_code='MAG01'
-ORDER BY mp.codi
+$magatzem = $_GET['magatzem'] ?? 'MAG01';
 
+$stmt = $pdo->prepare("
+    SELECT
+        mp.codi AS posicio,
+        mp.magatzem_code,
+        iu.serial,
+        i.sku
+    FROM magatzem_posicions mp
+    LEFT JOIN item_units iu
+        ON iu.id = mp.item_unit_id
+    LEFT JOIN items i
+        ON i.id = iu.item_id
+    WHERE mp.magatzem_code = ?
     ORDER BY mp.codi ASC
 ");
+
+$stmt->execute([$magatzem]);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $spreadsheet = new Spreadsheet();
 $sheet = $spreadsheet->getActiveSheet();
 $sheet->setTitle('ubicacions');
 
-// Capçalera
-$sheet->fromArray(['posicio', 'serial', 'sku'], null, 'A1');
-$sheet->getStyle('A1:C1')->getFont()->setBold(true);
+$sheet->fromArray(
+    ['magatzem', 'posicio', 'serial', 'sku'],
+    null,
+    'A1'
+);
 
-// Dades
+$sheet->getStyle('A1:E1')->getFont()->setBold(true);
+
 $r = 2;
+
 foreach ($rows as $row) {
-    $sheet->setCellValue("A{$r}", $row['posicio']);
-    $sheet->setCellValue("B{$r}", $row['serial'] ?? '');
-    $sheet->setCellValue("C{$r}", $row['sku'] ?? '');
+    $sheet->setCellValue("A{$r}", $row['magatzem_code']);
+    $sheet->setCellValue("B{$r}", $row['posicio']);
+    $sheet->setCellValue("C{$r}", $row['serial'] ?? '');
+    $sheet->setCellValue("D{$r}", $row['sku'] ?? '');
     $r++;
 }
 
-// Amplades
-$sheet->getColumnDimension('A')->setWidth(14);
-$sheet->getColumnDimension('B')->setWidth(22);
-$sheet->getColumnDimension('C')->setWidth(16);
+foreach (range('A', 'D') as $col) {
+    $sheet->getColumnDimension($col)->setAutoSize(true);
+}
 
-$filename = 'magatzem_ubicacions_' . date('Ymd_His') . '.xlsx';
+$sheet->setAutoFilter('A1:D1');
+
+$filename = 'magatzem_ubicacions_' . $magatzem . '_' . date('Ymd_His') . '.xlsx';
 
 header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 header("Content-Disposition: attachment; filename=\"{$filename}\"");
