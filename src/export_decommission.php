@@ -13,11 +13,11 @@ $sheet = $spreadsheet->getActiveSheet();
 $sheet->setTitle('Baixes');
 
 // Capçaleres
-$sheet->fromArray(['Data', 'SKU', 'Serial', 'Motiu', 'Màquina origen'], NULL, 'A1');
+$sheet->fromArray(['Data', 'SKU', 'Serial', 'Motiu', 'Màquina origen', 'Vida útil'], NULL, 'A1');
 
 // Dades
 $query = "
-  SELECT iu.updated_at, i.sku, iu.serial, iu.baixa_motiu, iu.maquina_actual
+  SELECT iu.updated_at, i.sku, iu.serial, iu.baixa_motiu, iu.maquina_baixa, iu.vida_utilitzada
   FROM item_units iu
   JOIN items i ON i.id = iu.item_id
   WHERE iu.estat='inactiu'
@@ -31,7 +31,8 @@ foreach ($data as $r) {
         $r['sku'],
         $r['serial'],
         str_replace('_', ' ', $r['baixa_motiu']),
-        $r['maquina_actual'] ?? ''
+        $r['maquina_baixa'] ?? '',
+        (int)($r['vida_utilitzada'] ?? 0)
     ], NULL, "A$rowNum");
     $rowNum++;
 }

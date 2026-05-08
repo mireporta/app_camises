@@ -344,6 +344,7 @@ ob_start();
         <th class="px-4 py-2">Serial</th>
         <th class="px-4 py-2">Motiu</th>
         <th class="px-4 py-2 text-center">Màquina origen</th>
+        <th class="px-4 py-2 text-center">Vida útil</th>
         <th class="px-4 py-2 text-right">Accions</th>
       </tr>
     </thead>
@@ -364,6 +365,7 @@ ob_start();
             <td class="px-4 py-2 font-mono"><?= htmlspecialchars($r['serial']) ?></td>
             <td class="px-4 py-2 <?= $colorClass ?>"><?= htmlspecialchars(str_replace('_',' ', $r['baixa_motiu'] ?? '')) ?></td>
             <td class="px-4 py-2 text-center"><?= htmlspecialchars($r['maquina_baixa'] ?? '—') ?></td>
+            <td class="px-4 py-2 text-center font-mono"><?= number_format((int)($r['vida_utilitzada'] ?? 0), 0, ',', '.') ?></td>
             <td class="px-4 py-2 text-right">
               <form method="POST"
                     action="../src/update_unit.php"
@@ -388,7 +390,7 @@ ob_start();
           </tr>
         <?php endforeach; ?>
       <?php else: ?>
-        <tr><td colspan="6" class="text-center text-gray-500 py-4 italic">No s’han trobat recanvis inactius amb aquests filtres.</td></tr>
+        <tr><td colspan="7" class="text-center text-gray-500 py-4 italic">No s’han trobat recanvis inactius amb aquests filtres.</td></tr>
       <?php endif; ?>
     </tbody>
   </table>
