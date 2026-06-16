@@ -22,14 +22,9 @@ function renderPage(string $title, string $content, string $extraScripts = '', a
   <title><?= htmlspecialchars($title) ?> | Inventari Camises</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Tailwind CSS + Chart.js -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.bunny.net">
-  <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Recursos locals -->
+<link rel="stylesheet" href="assets/css/tailwind.min.css">
+<script src="assets/js/chart.min.js"></script>
 
   <link rel="stylesheet" href="style.css">
 
