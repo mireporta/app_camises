@@ -437,15 +437,7 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
 
 <div class="mb-10">
 <a href="reception_pda.php"
-   style="
-      background:#fb923c;
-      color:white;
-      padding:8px 12px;
-      border-radius:6px;
-      font-weight:600;
-      text-decoration:none;
-      display:inline-block;
-   ">
+   class="font-semibold px-3 py-2 rounded bg-yellow-400 text-white text-sm mb-10">
   Recepció
 </a>
 </div>

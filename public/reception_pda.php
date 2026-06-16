@@ -113,7 +113,7 @@ ob_start();
 
 <div class="mb-10">
 <a href="entry_pda.php"
-   class="font-semibold px-3 py-2 rounded bg-orange-400 text-white text-sm mb-10">
+   class="font-semibold px-3 py-2 rounded bg-yellow-400 text-white text-sm mb-10">
   Peticions
 </a>
 </div>
@@ -148,7 +148,7 @@ ob_start();
                 data-pendent="<?= (int)$pendent ?>">
           <div class="flex justify-between items-center">
             <div class="font-semibold"><?= htmlspecialchars($p['sku']) ?></div>
-            <div class="text-sm font-bold <?= $pendent > 0 ? 'text-orange-700' : 'text-green-700' ?>">
+            <div class="text-sm font-bold <?= $pendent > 0 ? 'text-yellow-700' : 'text-green-700' ?>">
               <?= $pendent ?>
             </div>
           </div>
