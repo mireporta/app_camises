@@ -23,8 +23,8 @@ function renderPage(string $title, string $content, string $extraScripts = '', a
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <!-- Recursos locals -->
-<link rel="stylesheet" href="assets/css/tailwind.min.css">
-<script src="assets/js/chart.min.js"></script>
+<link rel="stylesheet" href="/Cylinders/public/assets/css/tailwind.min.css">
+<script src="/Cylinders/public/assets/js/chart.min.js"></script>
 
   <link rel="stylesheet" href="style.css">
 
