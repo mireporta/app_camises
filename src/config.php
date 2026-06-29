@@ -34,6 +34,6 @@ try {
         ]
     );
 } catch (PDOException $e) {
-    error_log('Error de connexió BD: ' . $e->getMessage());
-    die('Error de connexió a la base de dades.');
+    die($e->getMessage());
 }
+
