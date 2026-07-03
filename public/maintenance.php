@@ -27,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'marca
     $itemId    = (int)($_POST['item_id'] ?? 0);
     $qtyCompra = (int)($_POST['qty_comprada'] ?? 0);
     $proveidor = trim($_POST['proveidor'] ?? '');
+    $numeroComanda = trim($_POST['numero_comanda'] ?? '');
     $notes     = trim($_POST['notes'] ?? '');
 
     if ($itemId <= 0 || $qtyCompra <= 0 || $proveidor === '') {
@@ -34,10 +35,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'marca
     } else {
         $pdo->prepare("
             INSERT INTO compres_recanvis
-                (item_id, qty, qty_entrada, proveidor, notes, source, estat, created_at, updated_at)
+                (item_id, qty, qty_entrada, proveidor, numero_comanda, notes, source, estat, created_at, updated_at)
             VALUES
-                (?, ?, 0, ?, ?, 'auto', 'demanada', NOW(), NOW())
-        ")->execute([$itemId, $qtyCompra, $proveidor, $notes ?: null]);
+                (?, ?, 0, ?, ?, ?, 'auto', 'demanada', NOW(), NOW())
+        ")->execute([$itemId, $qtyCompra, $proveidor, $numeroComanda ?: null, $notes ?: null]);
 
         $message = "✅ Compra creada (auto).";
     }
@@ -49,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'crear
     $sku       = trim($_POST['sku'] ?? '');
     $qty       = (int)($_POST['qty'] ?? 0);
     $proveidor = trim($_POST['proveidor'] ?? '');
+    $numeroComanda = trim($_POST['numero_comanda'] ?? '');
     $notes     = trim($_POST['notes'] ?? '');
     $categoria = trim($_POST['categoria'] ?? '');
     $vidaDefault = (int)($_POST['vida_total_default'] ?? 0);
@@ -97,9 +99,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'crear
         // Crear compra manual
         if ($message === "") {
         $pdo->prepare("
-            INSERT INTO compres_recanvis (item_id, qty, qty_entrada, proveidor, notes, source, estat, created_at, updated_at)
-            VALUES (?, ?, 0, ?, ?, 'manual', 'demanada', NOW(), NOW())
-        ")->execute([$itemId, $qty, $proveidor, $notes ?: null]);
+            INSERT INTO compres_recanvis
+                (item_id, qty, qty_entrada, proveidor, numero_comanda, notes, source, estat, created_at, updated_at)
+            VALUES
+                (?, ?, 0, ?, ?, ?, 'manual', 'demanada', NOW(), NOW())
+        ")->execute([$itemId, $qty, $proveidor, $numeroComanda ?: null, $notes ?: null]);
 
         $message = "✅ Compra manual creada correctament ($sku x$qty).";
         }
@@ -220,8 +224,8 @@ $toBuy = $pdo->query("
 
 /* 📋 Pendents de recepció (únic llistat: AUTO + MANUAL) */
 $pendents = $pdo->query("
-    SELECT c.id, c.qty, c.qty_entrada, c.proveidor, c.notes, c.estat, c.source, c.created_at,
-           i.sku, i.category
+    SELECT c.id, c.qty, c.qty_entrada, c.proveidor, c.numero_comanda, c.notes, c.estat, c.source, c.created_at,
+       i.sku, i.category
     FROM compres_recanvis c
     JOIN items i ON i.id = c.item_id
     WHERE c.estat IN ('demanada','parcial')
@@ -231,7 +235,7 @@ $pendents = $pdo->query("
 ob_start();
 ?>
 
-<h2 class="text-3xl font-bold mb-6">Maintenance</h2>
+<h2 class="text-3xl font-bold mb-6">Manteniment</h2>
 
 <?php if ($message): ?>
   <?php
@@ -367,6 +371,12 @@ ob_start();
       </div>
 
       <div>
+        <label class="block mb-1 font-medium">Núm. comanda</label>
+        <input type="text" name="numero_comanda"
+              class="w-full p-2 border rounded focus:ring focus:ring-blue-200">
+      </div>
+
+      <div>
         <label class="block mb-1 font-medium">Notes (opcional)</label>
         <input type="text" name="notes" class="w-full p-2 border rounded focus:ring focus:ring-blue-200">
       </div>
@@ -479,8 +489,22 @@ ob_start();
 
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Proveïdor</label>
-        <input type="text" name="proveidor" id="cb-proveidor"
-               class="w-full border rounded px-2 py-2 text-sm" required>
+        <select name="proveidor" id="cb-proveidor"
+                class="w-full border rounded px-2 py-2 text-sm" required>
+          <option value="">Selecciona proveïdor...</option>
+          <?php foreach ($proveidors as $prov): ?>
+            <option value="<?= htmlspecialchars($prov) ?>">
+              <?= htmlspecialchars($prov) ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Núm. comanda</label>
+        <input type="text" name="numero_comanda"
+              class="w-full border rounded px-2 py-2 text-sm"
+              placeholder="Ex: OC-2026-001">
       </div>
 
       <div>
