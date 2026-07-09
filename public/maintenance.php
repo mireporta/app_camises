@@ -239,8 +239,8 @@ ob_start();
   <h2 class="text-3xl font-bold">Manteniment</h2>
 
   <a href="purchase_history.php"
-     class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded text-sm">
-    📜 Històric compres
+     class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded text-sm">
+    Històric compres
   </a>
 </div>
 
