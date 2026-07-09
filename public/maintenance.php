@@ -235,7 +235,14 @@ $pendents = $pdo->query("
 ob_start();
 ?>
 
-<h2 class="text-3xl font-bold mb-6">Manteniment</h2>
+<div class="flex items-center justify-between mb-6">
+  <h2 class="text-3xl font-bold">Manteniment</h2>
+
+  <a href="purchase_history.php"
+     class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded text-sm">
+    📜 Històric compres
+  </a>
+</div>
 
 <?php if ($message): ?>
   <?php
@@ -394,6 +401,15 @@ ob_start();
       <span class="text-sm text-gray-500"><?= count($pendents) ?> pendents</span>
     </div>
 
+    <div class="mb-4">
+      <input
+        type="text"
+        id="buscar-pendents"
+        class="w-full p-2 border rounded focus:ring focus:ring-blue-200"
+        placeholder="Buscar per comanda, proveïdor o camisa..."
+      >
+    </div>
+
     <?php if (count($pendents) > 0): ?>
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm text-left border">
@@ -402,6 +418,7 @@ ob_start();
               <th class="px-3 py-2">Data</th>
               <th class="px-3 py-2">Tipus</th>
               <th class="px-3 py-2">SKU</th>
+              <th class="px-3 py-2">Comanda</th>
               <th class="px-3 py-2">Qty</th>
               <th class="px-3 py-2">Entrada</th>
               <th class="px-3 py-2">Pendent</th>
@@ -413,7 +430,12 @@ ob_start();
           <tbody class="divide-y divide-gray-100">
             <?php foreach ($pendents as $p): ?>
               <?php $pendent = (int)$p['qty'] - (int)$p['qty_entrada']; ?>
-              <tr class="hover:bg-gray-50 transition">
+              <tr class="hover:bg-gray-50 transition fila-pendent"
+                  data-search="<?= htmlspecialchars(strtolower(
+                      ($p['sku'] ?? '') . ' ' .
+                      ($p['proveidor'] ?? '') . ' ' .
+                      ($p['numero_comanda'] ?? '')
+                  )) ?>">
                 <td class="px-3 py-2"><?= htmlspecialchars(substr($p['created_at'], 0, 10)) ?></td>
 
                 <td class="px-3 py-2">
@@ -425,6 +447,7 @@ ob_start();
                 </td>
 
                 <td class="px-3 py-2 font-semibold"><?= htmlspecialchars($p['sku']) ?></td>
+                <td class="px-3 py-2"><?= htmlspecialchars($p['numero_comanda'] ?? '') ?></td>
                 <td class="px-3 py-2"><?= (int)$p['qty'] ?></td>
                 <td class="px-3 py-2"><?= (int)$p['qty_entrada'] ?></td>
 
@@ -616,6 +639,19 @@ ob_start();
         openCompratModal(btn.dataset.itemId, btn.dataset.sku, btn.dataset.suggest);
       });
     });
+    // 🔍 Buscador de pendents
+        const buscador = document.getElementById('buscar-pendents');
+
+        if (buscador) {
+            buscador.addEventListener('input', () => {
+                const q = buscador.value.toLowerCase().trim();
+
+                document.querySelectorAll('.fila-pendent').forEach(row => {
+                    const text = row.dataset.search || '';
+                    row.style.display = text.includes(q) ? '' : 'none';
+                });
+            });
+        }
   });
 </script>
 

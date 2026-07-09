@@ -313,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
 <?php
 $content = ob_get_clean();
 // Mantenim el JS de peticions / modals al fitxer extern
-$extraScripts = '<script src="js/dashboard.js"></script>';
+$extraScripts = '<script src="assets/js/dashboard.js"></script>';
 require_once("layout.php");
 renderPage("Dashboard", $content, $extraScripts);
 ?>

@@ -159,26 +159,51 @@ ob_start();
 
             switch ($m['tipus']) {
               case 'entrada':
-                // De proveïdor (principal / intermig...) cap al magatzem
-                $origen = $maquina !== '' ? $maquina : 'proveïdor';
-                $desti  = 'magatzem';
+
+                if ($ubicacio === 'magatzem') {
+                    // Compra rebuda: Proveïdor -> Magatzem
+                    $origen = $maquina !== '' ? $maquina : 'proveïdor';
+                    $desti  = 'Magatzem';
+
+                } elseif (strtoupper($maquina) === 'Intermig') {
+                    // Intermig -> Magatzem
+                    $origen = 'Intermig';
+                    $desti  = 'Magatzem';
+
+                } elseif ($maquina !== '') {
+                    // Preparació -> Producció
+                    $origen = 'Preparació ' . $maquina;
+                    $desti  = 'Màquina ' . $maquina;
+
+                } else {
+                    $origen = 'Proveïdor';
+                    $desti  = 'Magatzem';
+                }
+
                 break;
 
               case 'sortida':
-                // Del magatzem cap a màquina X
-                $origen = 'magatzem';
-                $desti  = $maquina !== '' ? 'màquina ' . $maquina : 'maquina';
+
+                if ($maquina !== '') {
+                    // Magatzem -> Preparació
+                    $origen = 'Magatzem';
+                    $desti  = 'Preparació ' . $maquina;
+                } else {
+                    $origen = 'Magatzem';
+                    $desti  = '—';
+                }
+
                 break;
 
               case 'retorn':
-                if ($ubicacio === 'intermig') {
+                if ($ubicacio === 'Intermig') {
                   // De màquina X al magatzem intermig
-                  $origen = $maquina !== '' ? 'màquina ' . $maquina : 'maquina';
-                  $desti  = 'intermig';
-                } elseif ($ubicacio === 'magatzem') {
+                  $origen = $maquina !== '' ? 'Màquina' . $maquina : 'maquina';
+                  $desti  = 'Intermig';
+                } elseif ($ubicacio === 'Magatzem') {
                   // Restauració de baixa cap al magatzem
-                  $origen = $maquina !== '' ? 'màquina ' . $maquina : 'baixa';
-                  $desti  = 'magatzem';
+                  $origen = $maquina !== '' ? 'Màquina' . $maquina : 'Baixa';
+                  $desti  = 'Magatzem';
                 } else {
                   $origen = $maquina ?: '—';
                   $desti  = $ubicacio ?: '—';
@@ -188,11 +213,11 @@ ob_start();
               case 'baixa':
                 // On estava → baixa
                 if ($ubicacio === 'maquina') {
-                  $origen = $maquina !== '' ? 'màquina ' . $maquina : 'maquina';
+                  $origen = $maquina !== '' ? 'Màquina ' . $maquina : 'maquina';
                 } else {
                   $origen = $ubicacio ?: '—';
                 }
-                $desti = 'baixa';
+                $desti = 'Baixa';
                 break;
 
               default:

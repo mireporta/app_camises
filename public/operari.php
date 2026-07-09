@@ -522,7 +522,7 @@ ob_start();
         </datalist>
       </div>
 
-      <button type="submit" class="bg-sky-500 text-white px-4 py-2 rounded hover:bg-sky-700 w-full">
+      <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-700 w-full">
         Enviar petició
       </button>
     </form>
