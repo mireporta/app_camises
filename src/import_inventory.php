@@ -128,6 +128,7 @@ try {
 
         $ubicacioRaw = $data['ubicacio'] ?? '';
         $ubicacio = strtolower(trim((string)$ubicacioRaw));
+        $magatzemCode = strtoupper(trim((string)($data['magatzem_code'] ?? '')));
 
         $sububicacio = isset($data['sububicacio']) ? trim((string)$data['sububicacio']) : null;
         $maquinaActual = isset($data['maquina_actual']) ? trim((string)$data['maquina_actual']) : null;
@@ -149,6 +150,16 @@ try {
         // ✅ Inferim estat si no ve informat
         if ($estat === null) {
             $estat = ($ubicacio === 'baixa') ? 'inactiu' : 'actiu';
+        }
+
+        // Validació del magatzem
+        if ($ubicacio === 'magatzem'
+            && $magatzemCode !== ''
+            && !in_array($magatzemCode, ['MAG01', 'MAG02'], true)) {
+
+            $errors[] = "Fila {$excelRowNumber}: magatzem_code ha de ser MAG01 o MAG02.";
+            $excelRowNumber++;
+            continue;
         }
 
         // Camps obligatoris mínims
@@ -232,9 +243,16 @@ try {
                 updated_at      = NOW()
         ");
 
-        $magatzemCode = null;
         if ($ubicacio === 'magatzem') {
-            $magatzemCode = (!empty($sububicacio)) ? 'MAG01' : 'MAG02';
+
+            if ($magatzemCode === '') {
+                $magatzemCode = (!empty($sububicacio)) ? 'MAG01' : 'MAG02';
+            }
+
+        } else {
+
+            $magatzemCode = null;
+
         }
 
 

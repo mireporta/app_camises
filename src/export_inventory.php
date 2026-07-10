@@ -74,6 +74,7 @@ try {
             i.sku,
             iu.serial,
             iu.ubicacio,
+            iu.magatzem_code,
             iu.sububicacio,
             iu.maquina_actual,
             iu.vida_total,
@@ -139,12 +140,12 @@ try {
     $sheetUnits->setTitle('unitats');
 
     $headersUnits = [
-        'sku', 'serial', 'ubicacio', 'sububicacio', 'maquina_actual',
+        'sku', 'serial', 'ubicacio',  'magatzem_code', 'sububicacio', 'maquina_actual',
         'vida_total', 'vida_utilitzada', 'cicles_maquina', 'estat', 'proveidor', 'updated_at'
     ];
     $sheetUnits->fromArray($headersUnits, null, 'A1');
     $sheetUnits->freezePane('A2');
-    $sheetUnits->setAutoFilter('A1:K1');
+    $sheetUnits->setAutoFilter('A1:L1');
 
     $r = 2;
     foreach ($unitats as $u) {
@@ -153,6 +154,7 @@ try {
 
         $sheetUnits->fromArray([
             (string)($u['ubicacio'] ?? ''),
+            (string)($u['magatzem_code'] ?? ''),
             (string)($u['sububicacio'] ?? ''),
             (string)($u['maquina_actual'] ?? ''),
             ($u['vida_total'] === null ? '' : (int)$u['vida_total']),
@@ -166,7 +168,7 @@ try {
         $r++;
     }
 
-    foreach (range('A', 'K') as $col) {
+    foreach (range('A', 'L') as $col) {
         $sheetUnits->getColumnDimension($col)->setAutoSize(true);
     }
 
