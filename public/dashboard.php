@@ -17,7 +17,8 @@ $low_stock = (int)$pdo->query("
     WHERE estat='actiu'
     GROUP BY item_id
   ) u ON u.item_id = i.id
-  WHERE COALESCE(u.total_cnt, 0) < i.min_stock
+    WHERE i.active = 1
+    AND COALESCE(u.total_cnt, 0) < i.min_stock
 ")->fetchColumn();
 $machine_items = (int)$pdo->query("
   SELECT COUNT(*) FROM item_units WHERE estat='actiu' AND ubicacio='maquina'
@@ -78,7 +79,8 @@ $items_low_stock = $pdo->query("
     WHERE estat='actiu'
     GROUP BY item_id
   ) t ON t.item_id = i.id
-  WHERE COALESCE(t.total_cnt, 0) < i.min_stock
+   WHERE i.active = 1
+    AND COALESCE(t.total_cnt, 0) < i.min_stock
   ORDER BY COALESCE(t.total_cnt, 0)
 ")->fetchAll(PDO::FETCH_ASSOC);
 
