@@ -71,6 +71,7 @@ if (isset($_GET['msg'])) {
         'peticio_ok'   => "✅ Petició enviada correctament!",
         'vida_ok'      => "🧮 Unitats declarades correctament!",
         'retorn_ok'    => "↩ Camisa retornada al magatzem intermig.",
+        'preparacio_ok' => "↩ Camisa deixada a la zona de preparació.",
         'sku_invalid'  => "❌ El codi de camisa (SKU) no és vàlid.",
         'vida_error'       => "❌ No s'ha pogut registrar la producció.",
         'edit_ok'          => "✅ Producció corregida correctament.",
@@ -367,38 +368,77 @@ if (isset($_POST['action']) && $_POST['action'] === 'corregir_produccio') {
 if (isset($_POST['action']) && $_POST['action'] === 'retornar') {
     $maquina = $maquinaActual;
     $unit_id = (int)($_POST['unit_id'] ?? 0);
+    $destinacio = trim($_POST['destinacio_retorn'] ?? '');
+
+    // Només permetem les dues destinacions previstes
+    if (!in_array($destinacio, ['intermig', 'preparacio'], true)) {
+        header("Location: operari.php?msg=retorn_error");
+        exit;
+    }
 
     if ($unit_id > 0 && $maquina !== '') {
         try {
             $pdo->beginTransaction();
 
-            $stmt = $pdo->prepare("SELECT item_id FROM item_units WHERE id = ?");
-            $stmt->execute([$unit_id]);
+            // Comprovar que la unitat està activa i instal·lada
+            // realment a la màquina seleccionada
+            $stmt = $pdo->prepare("
+                SELECT item_id
+                FROM item_units
+                WHERE id = ?
+                  AND maquina_actual = ?
+                  AND ubicacio = 'maquina'
+                  AND estat = 'actiu'
+            ");
+            $stmt->execute([$unit_id, $maquina]);
             $item_id = $stmt->fetchColumn();
 
             if (!$item_id) {
-                throw new RuntimeException("Unitat no trobada");
+                throw new RuntimeException("Unitat no trobada o no instal·lada en aquesta màquina");
             }
 
+            // Intermig: flux habitual cap al magatzem.
+            // Preparació: queda vinculada a la mateixa màquina.
             $pdo->prepare("
                 UPDATE item_units
-                SET ubicacio = 'intermig',
+                SET ubicacio = ?,
                     updated_at = NOW()
                 WHERE id = ?
-            ")->execute([$unit_id]);
+            ")->execute([$destinacio, $unit_id]);
 
+            // Registrar el moviment amb la destinació escollida
             $pdo->prepare("
-                INSERT INTO moviments (item_unit_id, item_id, tipus, quantitat, ubicacio, maquina, created_at)
-                VALUES (?, ?, 'retorn', 1, 'intermig', ?, NOW())
-            ")->execute([$unit_id, $item_id, $maquina]);
+                INSERT INTO moviments (
+                    item_unit_id,
+                    item_id,
+                    tipus,
+                    quantitat,
+                    ubicacio,
+                    maquina,
+                    created_at
+                )
+                VALUES (?, ?, 'retorn', 1, ?, ?, NOW())
+            ")->execute([
+                $unit_id,
+                $item_id,
+                $destinacio,
+                $maquina
+            ]);
 
             $pdo->commit();
 
-            header("Location: operari.php?msg=retorn_ok");
+            $missatge = $destinacio === 'preparacio'
+                ? 'preparacio_ok'
+                : 'retorn_ok';
+
+            header("Location: operari.php?msg=" . $missatge);
             exit;
 
         } catch (Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
             error_log("Error retorn unitat: " . $e->getMessage());
             header("Location: operari.php?msg=retorn_error");
             exit;
@@ -577,8 +617,37 @@ ob_start();
         </select>
       </div>
 
+      <div>
+          <label class="block text-sm font-medium mb-2">
+              On vols deixar la camisa?
+          </label>
+
+          <div class="space-y-2">
+              <label class="flex items-center gap-2">
+                  <input
+                      type="radio"
+                      name="destinacio_retorn"
+                      value="intermig"
+                      checked
+                      required
+                  >
+                  <span>Retornar al magatzem</span>
+              </label>
+
+              <label class="flex items-center gap-2">
+                  <input
+                      type="radio"
+                      name="destinacio_retorn"
+                      value="preparacio"
+                      required
+                  >
+                  <span>Deixar a la màquina</span>
+              </label>
+          </div>
+      </div>
+
       <button type="submit" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 w-full">
-        Retornar al magatzem
+        Confirmar retorn
       </button>
     </form>
   </div>
