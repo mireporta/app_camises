@@ -498,9 +498,29 @@ if (!empty($maquinaActual)) {
     $unitatsPreparacio = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// ⏳ Peticions encara pendents de servir per a la màquina actual
+$peticionsPendentsMaquina = [];
+
+if (!empty($maquinaActual)) {
+    $stmt = $pdo->prepare("
+        SELECT
+            id,
+            sku,
+            created_at
+        FROM peticions
+        WHERE maquina = ?
+          AND estat = 'pendent'
+        ORDER BY created_at ASC
+    ");
+
+    $stmt->execute([$maquinaActual]);
+    $peticionsPendentsMaquina = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+
 // 🔧 SKUs instal·lats a la màquina actual (només SKU)
 $stmt = $pdo->prepare("
-  SELECT DISTINCT i.sku
+  SELECT i.sku
   FROM item_units iu
   JOIN items i ON i.id = iu.item_id
   WHERE iu.estat='actiu'
@@ -543,7 +563,7 @@ ob_start();
       </div>
 
       <div>
-        <label class="block text-sm font-medium">Codi camisa (SKU)</label>
+        <label class="block text-sm font-medium">Codi camisa</label>
         <input
           type="text"
           name="sku"
@@ -551,7 +571,7 @@ ob_start();
           list="sku-list"
           required
           class="w-full border p-2 rounded"
-          placeholder="Comença a escriure el SKU..."
+          placeholder="Comença a escriure el codi..."
           autofocus
           autocomplete="off"
         >
@@ -611,7 +631,7 @@ ob_start();
       </div>
 
       <div>
-        <label class="block text-sm font-medium">Unitat (serial)</label>
+        <label class="block text-sm font-medium">Camisa</label>
         <select name="unit_id" id="select-unit-retorn" required class="w-full border p-2 rounded">
           <option value="">-- Carregant unitats... --</option>
         </select>
@@ -667,10 +687,10 @@ ob_start();
     <div>
       <h4 class="text-sm font-semibold text-gray-700 mb-2">Pendents d’entrar</h4>
 
-      <?php if (empty($unitatsPreparacio)): ?>
-        <p class="text-sm text-gray-500">
-          No hi ha recanvis en preparació per a aquesta màquina.
-        </p>
+      <?php if (empty($unitatsPreparacio) && empty($peticionsPendentsMaquina)): ?>
+          <p class="text-sm text-gray-500">
+              No hi ha camises pendents ni disponibles per a aquesta màquina.
+          </p>
       <?php else: ?>
         <form method="POST">
           <input type="hidden" name="action" value="instal_lar">
@@ -679,10 +699,26 @@ ob_start();
             <thead>
               <tr class="bg-gray-100">
                 <th class="border px-2 py-1 text-center w-10">✔</th>
-                <th class="border px-2 py-1 text-left">SKU</th>
+                <th class="border px-2 py-1 text-left">CODI</th>
               </tr>
             </thead>
             <tbody>
+              <?php foreach ($peticionsPendentsMaquina as $p): ?>
+                  <tr class="bg-gray-50 text-gray-400">
+
+                      <td class="border px-2 py-1 text-center">
+                          <input
+                              type="checkbox"
+                              disabled
+                              class="h-4 w-4 cursor-not-allowed opacity-50"
+                          >
+                      </td>
+
+                      <td class="border px-2 py-1">
+                          <?= htmlspecialchars($p['sku']) ?>
+                      </td>
+                  </tr>
+              <?php endforeach; ?>
               <?php foreach ($unitatsPreparacio as $u): ?>
                 <tr>
                   <td class="border px-2 py-1 text-center">
@@ -719,7 +755,7 @@ ob_start();
         <table class="w-full text-sm border">
           <thead>
             <tr class="bg-gray-100">
-              <th class="border px-2 py-1 text-left">SKU</th>
+              <th class="border px-2 py-1 text-left">CODI</th>
             </tr>
           </thead>
           <tbody>

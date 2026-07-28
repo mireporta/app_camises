@@ -527,7 +527,7 @@ if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
                 type="submit"
                 class="bg-green-600 text-white px-4 py-3 rounded w-full text-lg font-semibold"
             >
-                Confirmar recollida
+                Confirmar
             </button>
         </form>
 
