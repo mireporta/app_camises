@@ -50,16 +50,20 @@ $peticions = $pdo->query("
 
 /* 🟢 0️⃣ SERVIR PETICIÓ DES DE LA PDA (igual lògica que peticions_actions.php) */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'serveix_pda')) {
-    $id      = (int)($_POST['peticio_id'] ?? 0);
-    $unit_id = (int)($_POST['unit_id'] ?? 0);
+    $id = (int)($_POST['peticio_id'] ?? 0);
+
+    $posicioEscanejada = strtoupper(trim(
+        $_POST['posicio_escanejada'] ?? ''
+    ));
 
     $msg = "";
 
-    if (!$id || !$unit_id) {
-        $msg = "❌ Falten dades per servir la petició.";
+    if (!$id || $posicioEscanejada === '') {
+        $msg = "❌ Cal escanejar la posició del magatzem.";
     } else {
         try {
             // 👉 Copiem la mateixa lògica que a peticions_actions.php (serveix)
+            $pdo->beginTransaction();
             $stmt = $pdo->prepare("SELECT sku, maquina, estat FROM peticions WHERE id = ?");
             $stmt->execute([$id]);
             $peticio = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -70,15 +74,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'serv
                 throw new Exception('La petició ja està gestionada.');
             }
 
-            // Obtenim unitat disponible per al SKU
+            // Comprovem que existeix la posició escanejada
             $stmt = $pdo->prepare("
-                SELECT iu.id, iu.item_id, iu.estat, iu.ubicacio, iu.sububicacio, i.sku
+                SELECT codi
+                FROM magatzem_posicions
+                WHERE UPPER(codi)=?
+            ");
+            $stmt->execute([$posicioEscanejada]);
+
+            if (!$stmt->fetch()) {
+                throw new Exception("La posició {$posicioEscanejada} no existeix.");
+            }
+
+            // Busquem la camisa d'aquest SKU en aquesta posició
+            $stmt = $pdo->prepare("
+                SELECT
+                    iu.id,
+                    iu.item_id,
+                    iu.serial,
+                    iu.estat,
+                    iu.ubicacio,
+                    iu.sububicacio,
+                    i.sku
                 FROM item_units iu
                 JOIN items i ON i.id = iu.item_id
-                WHERE iu.id = ? AND i.sku = ?
+                WHERE i.sku = ?
+                AND UPPER(iu.sububicacio)=?
+                AND iu.estat='actiu'
+                AND iu.ubicacio='magatzem'
+                LIMIT 1
             ");
-            $stmt->execute([$unit_id, $peticio['sku']]);
+
+            $stmt->execute([
+                $peticio['sku'],
+                $posicioEscanejada
+            ]);
+
             $unit = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$unit) {
+                throw new Exception(
+                    "A la posició {$posicioEscanejada} no hi ha cap camisa del SKU {$peticio['sku']}."
+                );
+            }
+
+            $unit_id = (int)$unit['id'];
             if (!$unit) {
                 throw new Exception('Unitat no vàlida per aquest SKU.');
             }
@@ -113,10 +153,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'serv
                 ");
                 $mov->execute([$unit_id, $unit['item_id'], $peticio['maquina']]);
             }
-
+            $pdo->commit();
             $msg = "✅ Petició servida correctament per a la màquina {$peticio['maquina']}.";
 
         } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
             $msg = "❌ Error en servir la petició: " . $e->getMessage();
         }
     }
@@ -375,53 +419,145 @@ $intermigItems = $pdo->query("
 
 ob_start();
 
-/* 🟦 MODE: SELECCIONAR UNITAT PER SERVIR UNA PETICIÓ */
+/* 🟦 MODE: ESCANEJAR POSICIÓ PER SERVIR UNA PETICIÓ */
 if (isset($_GET['serveix_peticio'], $_GET['sku'])) {
     $peticioId = (int)$_GET['serveix_peticio'];
-    $skuServeix = $_GET['sku'];
+    $skuServeix = trim($_GET['sku']);
+
     $unitats = obtenirUnitatsDisponibles($pdo, $skuServeix);
     ?>
-    <h2 class="text-2xl font-bold mb-4">Servir recanvi</h2>
 
-    <p class="mb-3 text-gray-700">
-        Petició <strong>#<?= $peticioId ?></strong> — SKU <strong><?= htmlspecialchars($skuServeix) ?></strong>
-    </p>
+    <h2 class="text-2xl font-bold mb-4">
+        Servir recanvi
+    </h2>
+
+    <div class="mb-4 p-4 bg-green-100 border border-green-300 rounded">
+        <div class="text-sm text-gray-700">
+            Petició <strong>#<?= $peticioId ?></strong>
+        </div>
+
+        <div class="mt-1 text-lg">
+            CAMISA:
+            <strong><?= htmlspecialchars($skuServeix) ?></strong>
+        </div>
+    </div>
 
     <?php if (empty($unitats)): ?>
+
         <div class="p-3 bg-red-100 border border-red-300 rounded text-sm">
             ❌ No hi ha unitats disponibles al magatzem per aquest SKU.
         </div>
-        <a href="entry_pda.php" class="mt-4 inline-block bg-gray-300 px-4 py-2 rounded text-sm">
+
+        <a
+            href="entry_pda.php"
+            class="mt-4 inline-block bg-gray-300 px-4 py-2 rounded text-sm"
+        >
             ← Tornar
         </a>
+
     <?php else: ?>
-        <div class="space-y-3 mt-4">
+
+        <div class="mb-5 overflow-hidden border border-gray-300 rounded-lg bg-white">
+
+            <div class="grid grid-cols-2 bg-gray-100 font-semibold text-sm">
+                <div class="p-3 border-r border-gray-300">
+                    Serial
+                </div>
+
+                <div class="p-3">
+                    Ubicació
+                </div>
+            </div>
+
             <?php foreach ($unitats as $u): ?>
-                <div class="border rounded p-3 bg-white shadow text-sm">
-                    <div><strong>Serial:</strong> <span class="font-mono"><?= htmlspecialchars($u['serial']) ?></span></div>
-                    <div><strong>Posició magatzem:</strong> <?= htmlspecialchars($u['sububicacio'] ?? '—') ?></div>
+                <div class="grid grid-cols-2 border-t border-gray-200 text-sm">
 
-                    <form method="POST" class="mt-2">
-                        <input type="hidden" name="action" value="serveix_pda">
-                        <input type="hidden" name="peticio_id" value="<?= $peticioId ?>">
-                        <input type="hidden" name="unit_id" value="<?= (int)$u['id'] ?>">
+                    <div class="p-3 border-r border-gray-200 font-mono font-semibold">
+                        <?= htmlspecialchars($u['serial']) ?>
+                    </div>
 
-                        <button type="submit"
-                                class="bg-green-600 text-white px-4 py-2 rounded w-full text-sm font-semibold">
-                            Servir
-                        </button>
-                    </form>
+                    <div class="p-3 font-mono text-lg">
+                        <?= htmlspecialchars($u['sububicacio'] ?? 'Sense posició') ?>
+                    </div>
+
                 </div>
             <?php endforeach; ?>
+
         </div>
 
-        <a href="entry_pda.php" class="mt-6 inline-block bg-gray-300 px-4 py-2 rounded text-sm">
+        <form
+            method="POST"
+            id="form-servir-peticio"
+            class="space-y-4"
+        >
+            <input
+                type="hidden"
+                name="action"
+                value="serveix_pda"
+            >
+
+            <input
+                type="hidden"
+                name="peticio_id"
+                value="<?= $peticioId ?>"
+            >
+
+            <div>
+                <label
+                    for="posicio-escanejada"
+                    class="block text-sm font-semibold mb-2"
+                >
+                    Escaneja una de les ubicacions
+                </label>
+
+                <input
+                    type="text"
+                    name="posicio_escanejada"
+                    id="posicio-escanejada"
+                    required
+                    autofocus
+                    autocomplete="off"
+                    autocapitalize="characters"
+                    class="w-full border-2 border-blue-400 rounded p-4 text-xl font-mono uppercase"
+                    placeholder="Escaneja la ubicació..."
+                >
+            </div>
+
+            <button
+                type="submit"
+                class="bg-green-600 text-white px-4 py-3 rounded w-full text-lg font-semibold"
+            >
+                Confirmar recollida
+            </button>
+        </form>
+
+        <a
+            href="entry_pda.php"
+            class="mt-6 inline-block bg-gray-300 px-4 py-2 rounded text-sm"
+        >
             ← Cancel·lar i tornar
         </a>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                const input = document.getElementById('posicio-escanejada');
+
+                if (!input) {
+                    return;
+                }
+
+                input.focus();
+
+                input.addEventListener('input', function () {
+                    this.value = this.value.toUpperCase();
+                });
+            });
+        </script>
+
     <?php endif;
 
     $content = ob_get_clean();
-    renderOperariPage("PDA","Responsable", $content);
+    renderOperariPage("PDA", "Responsable", $content);
     exit;
 }
 ?>
