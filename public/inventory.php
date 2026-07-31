@@ -234,7 +234,7 @@ if (!empty($_SESSION['import_message'])): ?>
 
                 switch ($u['ubicacio']) {
                   case 'magatzem':
-                    $ubicacioLabel = 'Magatzem';
+                    $ubicacioLabel = $u['magatzem_code'] ?? 'MAG01';
                     break;
                   case 'intermig':
                     $ubicacioLabel = 'Intermig';
