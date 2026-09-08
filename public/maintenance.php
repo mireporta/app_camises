@@ -334,23 +334,22 @@ ob_start();
     <form method="POST" class="space-y-4">
       <input type="hidden" name="action" value="crear_compra">
 
-      <div>
-        <label class="block mb-1 font-medium">SKU</label>
+      <div>SKU</label>
         <input type="text" name="sku" required class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: ENRE001">
       </div>
 
       <div>
-        <label class="block mb-1 font-medium">Categoria (si és SKU nova o per actualitzar)</label>
+        <label class="block mb-1 font-medium">Categoria (només SKU nova)</label>
         <input type="text" name="categoria" class="w-full p-2 border rounded focus:ring focus:ring-blue-200" placeholder="Ex: A4 / A5">
       </div>
 
       <div>
-        <label class="block mb-1 font-medium">Vida útil per defecte (només si SKU nova)</label>
+        <label class="block mb-1 font-medium">Vida útil (només SKU nova)</label>
         <input type="number" name="vida_total_default" min="0"
               class="w-full p-2 border rounded focus:ring focus:ring-blue-200"
-              placeholder="Ex: 200">
+              placeholder="Ex: 300000">
         <p class="text-xs text-gray-400 mt-1">
-          Si l’SKU ja existeix, aquest camp s’ignora (no sobreescriu el valor actual).
+          Si la camisa ja existeix, aquest camp s’ignora (no sobreescriu el valor actual).
         </p>
       </div>
 
@@ -378,7 +377,7 @@ ob_start();
       </div>
 
       <div>
-        <label class="block mb-1 font-medium">Núm. comanda</label>
+        <label class="block mb-1 font-medium">Núm. comanda (opcional)</label>
         <input type="text" name="numero_comanda"
               class="w-full p-2 border rounded focus:ring focus:ring-blue-200">
       </div>
