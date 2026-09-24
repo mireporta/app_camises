@@ -108,6 +108,136 @@ if ($isLogged && isset($_POST['crear_ubicacions'])) {
     }
 }
 
+// Eliminar prestatgeria
+if ($isLogged && isset($_POST['eliminar_prestatgeria'])) {
+
+    $magatzem = trim($_POST['magatzem_code'] ?? '');
+    $estanteria = (int)($_POST['estanteria'] ?? 0);
+
+    if ($magatzem === '' || $estanteria <= 0) {
+
+        $error = 'Cal indicar el magatzem i la prestatgeria.';
+
+    } else {
+
+        // Comprovar que la prestatgeria existeix
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM magatzem_posicions
+            WHERE magatzem_code = ?
+              AND estanteria = ?
+        ");
+        $stmt->execute([$magatzem, $estanteria]);
+
+        $totalPosicions = (int)$stmt->fetchColumn();
+
+        if ($totalPosicions === 0) {
+
+            $error = "La prestatgeria {$estanteria} no existeix a {$magatzem}.";
+
+        } else {
+
+            // Comprovar si hi ha alguna posició ocupada
+            $stmt = $pdo->prepare("
+                SELECT COUNT(*)
+                FROM magatzem_posicions
+                WHERE magatzem_code = ?
+                  AND estanteria = ?
+                  AND item_unit_id IS NOT NULL
+            ");
+            $stmt->execute([$magatzem, $estanteria]);
+
+            $ocupades = (int)$stmt->fetchColumn();
+
+            if ($ocupades > 0) {
+
+                $error =
+                    "No es pot eliminar la prestatgeria {$estanteria} de {$magatzem}: " .
+                    "té {$ocupades} posició/posicions ocupades.";
+
+            } else {
+
+                // Eliminar totes les posicions de la prestatgeria
+                $stmt = $pdo->prepare("
+                    DELETE FROM magatzem_posicions
+                    WHERE magatzem_code = ?
+                      AND estanteria = ?
+                      AND item_unit_id IS NULL
+                ");
+
+                $stmt->execute([$magatzem, $estanteria]);
+
+                $eliminades = $stmt->rowCount();
+
+                $success =
+                    "Prestatgeria {$estanteria} de {$magatzem} eliminada correctament. " .
+                    "S'han eliminat {$eliminades} ubicacions.";
+            }
+        }
+    }
+}
+
+// Eliminar una sububicació
+
+if ($isLogged && isset($_POST['eliminar_ubicacio'])) {
+
+    $magatzem = trim($_POST['magatzem_code'] ?? '');
+    $codi = strtoupper(trim($_POST['codi_ubicacio'] ?? ''));
+
+    if ($magatzem === '' || $codi === '') {
+
+        $error = 'Cal indicar el magatzem i la ubicació.';
+
+    } else {
+
+        // Buscar la posició
+        $stmt = $pdo->prepare("
+            SELECT item_unit_id
+            FROM magatzem_posicions
+            WHERE magatzem_code = ?
+              AND codi = ?
+            LIMIT 1
+        ");
+
+        $stmt->execute([$magatzem, $codi]);
+
+        $posicio = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$posicio) {
+
+            $error = "La ubicació {$codi} no existeix a {$magatzem}.";
+
+        } elseif ($posicio['item_unit_id'] !== null) {
+
+            $error =
+                "No es pot eliminar la ubicació {$codi}: " .
+                "actualment està ocupada per una camisa.";
+
+        } else {
+
+            $stmt = $pdo->prepare("
+                DELETE FROM magatzem_posicions
+                WHERE magatzem_code = ?
+                  AND codi = ?
+                  AND item_unit_id IS NULL
+            ");
+
+            $stmt->execute([$magatzem, $codi]);
+
+            if ($stmt->rowCount() === 1) {
+
+                $success =
+                    "Ubicació {$codi} de {$magatzem} eliminada correctament.";
+
+            } else {
+
+                $error =
+                    "No s'ha pogut eliminar la ubicació {$codi}.";
+            }
+        }
+    }
+}
+
 // Afegir màquina
 if ($isLogged && isset($_POST['nova_maquina'])) {
 
@@ -269,112 +399,275 @@ ob_start();
 
     <?php else: ?>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- ===================================================== -->
+<!-- GESTIÓ DEL MAGATZEM -->
+<!-- ===================================================== -->
 
-            <div class="bg-white rounded-xl shadow p-6">
-                <h3 class="text-xl font-semibold mb-4">Afegir màquina</h3>
+<div class="bg-white rounded-xl shadow p-6">
 
-                <form method="post" class="space-y-4">
+    <h3 class="text-xl font-semibold mb-2">
+        Magatzem
+    </h3>
+
+    <p class="text-sm text-gray-500 mb-6">
+        Crea o elimina ubicacions i prestatgeries del magatzem.
+    </p>
+
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- ============================================ -->
+        <!-- CREAR UBICACIONS -->
+        <!-- ============================================ -->
+
+        <div class="border rounded-lg p-4">
+
+            <h4 class="font-semibold text-gray-800 mb-1">
+                Crear ubicacions
+            </h4>
+
+            <p class="text-xs text-gray-500 mb-4">
+                Crea les posicions d'una prestatgeria.
+            </p>
+
+            <form method="post" class="space-y-4">
+
+                <input
+                    type="hidden"
+                    name="crear_ubicacions"
+                    value="1"
+                >
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Magatzem
+                    </label>
+
+                    <select
+                        name="magatzem_code"
+                        required
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    >
+                        <option value="MAG01">MAG01</option>
+                        <option value="MAG02">MAG02</option>
+                    </select>
+                </div>
+
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Prestatgeria
+                    </label>
+
+                    <input
+                        type="number"
+                        name="estanteria"
+                        min="1"
+                        required
+                        placeholder="Ex: 18"
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    >
+                </div>
+
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Files separades per comes
+                    </label>
+
+                    <input
+                        type="text"
+                        name="files"
+                        placeholder="A,B,C,D"
+                        required
+                        autocomplete="off"
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none uppercase"
+                    >
+                </div>
+
+
+                <div class="grid grid-cols-2 gap-4">
+
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Codi màquina
+                            Profunditat inicial
                         </label>
-                        <input
-                            type="text"
-                            name="nova_maquina"
-                            required
-                            class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        >
-                    </div>
 
-                    <button type="submit"
-                            class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold">
-                        Crear màquina
-                    </button>
-                </form>
-            </div>
-
-            <div class="bg-white rounded-xl shadow p-6">
-                <h3 class="text-xl font-semibold mb-4">Crear ubicacions de magatzem</h3>
-
-                <form method="post" class="space-y-4">
-                    <input type="hidden" name="crear_ubicacions" value="1">
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Magatzem
-                        </label>
-                        <select
-                            name="magatzem_code"
-                            required
-                            class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        >
-                            <option value="MAG01">MAG01</option>
-                            <option value="MAG02">MAG02</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Prestatgeria
-                        </label>
                         <input
                             type="number"
-                            name="estanteria"
+                            name="prof_inicial"
                             min="1"
                             required
                             class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                         >
                     </div>
 
+
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Files separades per comes
+                            Profunditat final
                         </label>
+
                         <input
-                            type="text"
-                            name="files"
-                            placeholder="A,B,C,D"
+                            type="number"
+                            name="prof_final"
+                            min="1"
                             required
                             class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                         >
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Profunditat inicial
-                            </label>
-                            <input
-                                type="number"
-                                name="prof_inicial"
-                                min="1"
-                                required
-                                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                            >
-                        </div>
+                </div>
 
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Profunditat final
-                            </label>
-                            <input
-                                type="number"
-                                name="prof_final"
-                                min="1"
-                                required
-                                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                            >
-                        </div>
-                    </div>
 
-                    <button type="submit"
-                            class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold">
-                        Crear ubicacions
-                    </button>
-                </form>
-            </div>
+                <button
+                    type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold"
+                >
+                    Crear ubicacions
+                </button>
+
+            </form>
+
         </div>
+
+
+        <!-- ============================================ -->
+        <!-- ELIMINAR UBICACIONS -->
+        <!-- ============================================ -->
+
+        <div class="border rounded-lg p-4">
+
+            <h4 class="font-semibold text-gray-800 mb-1">
+                Eliminar ubicacions
+            </h4>
+
+            <p class="text-xs text-gray-500 mb-4">
+                Només es poden eliminar posicions que no estiguin ocupades.
+            </p>
+
+
+            <!-- ELIMINAR UNA UBICACIÓ -->
+
+            <form
+                method="post"
+                class="space-y-4"
+                onsubmit="return confirm('Segur que vols eliminar aquesta ubicació?');"
+            >
+
+                <input
+                    type="hidden"
+                    name="eliminar_ubicacio"
+                    value="1"
+                >
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Magatzem
+                    </label>
+
+                    <select
+                        name="magatzem_code"
+                        required
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    >
+                        <option value="MAG01">MAG01</option>
+                        <option value="MAG02">MAG02</option>
+                    </select>
+                </div>
+
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Ubicació
+                    </label>
+
+                    <input
+                        type="text"
+                        name="codi_ubicacio"
+                        required
+                        placeholder="Ex: 18C11"
+                        autocomplete="off"
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2 font-mono uppercase"
+                    >
+                </div>
+
+
+                <button
+                    type="submit"
+                    class="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg font-semibold"
+                >
+                    Eliminar ubicació
+                </button>
+
+            </form>
+
+
+            <!-- SEPARADOR -->
+
+            <div class="border-t my-6"></div>
+
+
+            <!-- ELIMINAR PRESTATGERIA -->
+
+            <form
+                method="post"
+                class="space-y-4"
+                onsubmit="return confirm('Segur que vols eliminar aquesta prestatgeria i totes les seves ubicacions? Aquesta acció no es pot desfer.');"
+            >
+
+                <input
+                    type="hidden"
+                    name="eliminar_prestatgeria"
+                    value="1"
+                >
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Magatzem
+                    </label>
+
+                    <select
+                        name="magatzem_code"
+                        required
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    >
+                        <option value="MAG01">MAG01</option>
+                        <option value="MAG02">MAG02</option>
+                    </select>
+                </div>
+
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Prestatgeria
+                    </label>
+
+                    <input
+                        type="number"
+                        name="estanteria"
+                        min="1"
+                        required
+                        placeholder="Ex: 18"
+                        class="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    >
+                </div>
+
+
+                <button
+                    type="submit"
+                    class="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg font-semibold"
+                >
+                    Eliminar prestatgeria
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</div>
 
         <div class="bg-white rounded-xl shadow p-6">
             <h3 class="text-xl font-semibold mb-4">Proveïdors</h3>
@@ -459,67 +752,125 @@ ob_start();
         </div>
 
 
-        <div class="bg-white rounded-xl shadow p-6">
-            <h3 class="text-xl font-semibold mb-4">Màquines existents</h3>
+<div class="bg-white rounded-xl shadow p-6">
 
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm text-left">
-                    <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
-                        <tr>
-                            <th class="px-4 py-2">Codi</th>
-                            <th class="px-4 py-2">Estat</th>
-                            <th class="px-4 py-2">Acció</th>
-                        </tr>
-                    </thead>
+    <h3 class="text-xl font-semibold mb-4">
+        Màquines
+    </h3>
 
-                    <tbody class="divide-y divide-gray-100">
-                        <?php foreach ($maquines as $maq): ?>
-                            <tr>
-                                <td class="px-4 py-3 font-semibold">
-                                    <?= htmlspecialchars($maq['codi']) ?>
-                                </td>
+    <!-- AFEGIR MÀQUINA -->
+    <form method="post" class="space-y-4 mb-6">
 
-                                <td class="px-4 py-3">
-                                    <?php if ((int)$maq['activa'] === 1): ?>
-                                        <span class="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold">
-                                            Activa
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="bg-gray-200 text-gray-600 px-2 py-1 rounded-full text-xs font-semibold">
-                                            Inactiva
-                                        </span>
-                                    <?php endif; ?>
-                                </td>
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                Nova màquina
+            </label>
 
-                                <td class="px-4 py-3">
-                                    <form method="post" class="m-0">
-                                        <input
-                                            type="hidden"
-                                            name="toggle_maquina_id"
-                                            value="<?= (int)$maq['id'] ?>"
-                                        >
-
-                                        <input
-                                            type="hidden"
-                                            name="nova_activa"
-                                            value="<?= ((int)$maq['activa'] === 1) ? 0 : 1 ?>"
-                                        >
-
-                                        <button type="submit"
-                                                class="<?= ((int)$maq['activa'] === 1)
-                                                    ? 'bg-red-100 hover:bg-red-200 text-red-700'
-                                                    : 'bg-green-100 hover:bg-green-200 text-green-700'
-                                                ?> px-4 py-2 rounded-lg text-sm font-semibold">
-                                            <?= ((int)$maq['activa'] === 1) ? 'Desactivar' : 'Activar' ?>
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
+            <input
+                type="text"
+                name="nova_maquina"
+                required
+                placeholder="Ex: P351"
+                autocomplete="off"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            >
         </div>
+
+        <button
+            type="submit"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold"
+        >
+            Crear màquina
+        </button>
+
+    </form>
+
+
+    <!-- LLISTA DE MÀQUINES -->
+    <div class="overflow-x-auto">
+
+        <table class="min-w-full text-sm text-left">
+
+            <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+                <tr>
+                    <th class="px-4 py-2">Codi</th>
+                    <th class="px-4 py-2">Estat</th>
+                    <th class="px-4 py-2">Acció</th>
+                </tr>
+            </thead>
+
+            <tbody class="divide-y divide-gray-100">
+
+                <?php foreach ($maquines as $maq): ?>
+
+                    <tr>
+
+                        <td class="px-4 py-3 font-semibold">
+                            <?= htmlspecialchars($maq['codi']) ?>
+                        </td>
+
+                        <td class="px-4 py-3">
+
+                            <?php if ((int)$maq['activa'] === 1): ?>
+
+                                <span class="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold">
+                                    Activa
+                                </span>
+
+                            <?php else: ?>
+
+                                <span class="bg-gray-200 text-gray-600 px-2 py-1 rounded-full text-xs font-semibold">
+                                    Inactiva
+                                </span>
+
+                            <?php endif; ?>
+
+                        </td>
+
+                        <td class="px-4 py-3">
+
+                            <form method="post" class="m-0">
+
+                                <input
+                                    type="hidden"
+                                    name="toggle_maquina_id"
+                                    value="<?= (int)$maq['id'] ?>"
+                                >
+
+                                <input
+                                    type="hidden"
+                                    name="nova_activa"
+                                    value="<?= ((int)$maq['activa'] === 1) ? 0 : 1 ?>"
+                                >
+
+                                <button
+                                    type="submit"
+                                    class="<?= ((int)$maq['activa'] === 1)
+                                        ? 'bg-red-100 hover:bg-red-200 text-red-700'
+                                        : 'bg-green-100 hover:bg-green-200 text-green-700'
+                                    ?> px-4 py-2 rounded-lg text-sm font-semibold"
+                                >
+                                    <?= ((int)$maq['activa'] === 1)
+                                        ? 'Desactivar'
+                                        : 'Activar'
+                                    ?>
+                                </button>
+
+                            </form>
+
+                        </td>
+
+                    </tr>
+
+                <?php endforeach; ?>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
 
     <?php endif; ?>
 
