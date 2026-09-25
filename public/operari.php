@@ -475,7 +475,7 @@ if (!empty($maquinaActual)) {
           TIMESTAMPDIFF(MINUTE, e.created_at, NOW()) AS mins_passats
         FROM produccio_events e
         WHERE e.maquina = ?
-          AND e.created_at >= DATE_SUB(NOW(), INTERVAL 2 HOUR)
+          AND e.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
         ORDER BY e.created_at DESC
     ");
     $stmt->execute([$maquinaActual]);
