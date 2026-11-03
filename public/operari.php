@@ -462,7 +462,7 @@ $unitatsPerMaquina = $pdo->query("
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // 📜 Produccions recents (per mostrar i poder corregir)
-// Mostrem, per exemple, les últimes 2 hores, però només seran editables els < 10 min
+// Mostrem el últims 3 dies però només seran editables els < 10 min
 $recentEvents = [];
 if (!empty($maquinaActual)) {
     $stmt = $pdo->prepare("
@@ -475,7 +475,7 @@ if (!empty($maquinaActual)) {
           TIMESTAMPDIFF(MINUTE, e.created_at, NOW()) AS mins_passats
         FROM produccio_events e
         WHERE e.maquina = ?
-          AND e.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+          AND e.created_at >= DATE_SUB(NOW(), INTERVAL 72 HOUR)
         ORDER BY e.created_at DESC
     ");
     $stmt->execute([$maquinaActual]);
